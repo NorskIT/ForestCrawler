@@ -1,0 +1,79 @@
+# ForestCrawler development
+
+A private, non-damaging Valheim horror encounter using the supplied Smile model. The server chooses one isolated player; only that player's client creates the creature and its spatial audio.
+
+The complete client package contains the Release plugin and Unity AssetBundle with the supplied model, three original animations, eight audio assets and three closeup facial morphs and a model-only horror shader. See `VERIFICATION.md` for executed checks and remaining manual acceptance tests.
+
+The latest animation pass adds held neck tilts and irregular head twitches to idle, a compressed anticipation and sharp asymmetrical scream, and head recoils/uneven arm movement during the charge. See `REVIEW.md` for the associated code review and fixes.
+
+Local deployment defaults to Gale **Development**. Building a package does not install it. Prod-v1 and remote servers are not changed by the default deployment workflow.
+
+## Build
+
+The reference installation is Valheim 1.0.12, Unity 6000.0.75f1 and BepInEx 5.4.23.5 on Windows. `Environment.props` resolves the installed game and Gale Prod-v1 BepInEx. Override these through `Environment.local.props` or MSBuild properties when necessary.
+
+1. Install the .NET SDK, Valheim, BepInEx and a licensed Unity Editor 6000.0.75f1.
+2. For a normal source checkout, run `scripts/Build-Assets.ps1 -SkipBlender -UnityPath 'PATH/Editor/Unity.exe'` to build from the checked-in Unity assets.
+3. To regenerate the models from original downloads instead, run `scripts/Import-Assets.ps1` and install Blender 4.5.3 LTS. Original downloads and build tools are not included in Git.
+4. Run `scripts/Build-Assets.ps1 -BlenderPath 'PATH/blender.exe' -UnityPath 'PATH/Editor/Unity.exe'` when regenerating geometry, animation and facial morphs.
+5. Run `scripts/Build-Package.ps1`, then `scripts/Deploy-Local.ps1 -Profile Development`. Deployment to another profile requires an explicit profile selection.
+
+Run pure logic tests separately with `dotnet run --project tests/ForestCrawler.Tests -c Release`.
+
+Client packages require both `ForestCrawler.dll` and `forestcrawler.assets` in `BepInEx/plugins/ForestCrawler`. Dedicated servers use the same DLL without loading the bundle; `Build-Package.ps1 -ServerOnly` produces that package. Matching mod versions on the server and every connected client provide the heartbeat coverage needed for isolation. Missing/stale clients disable encounters conservatively. Local previews remain possible when the server lacks the mod; no client takes over natural scheduling.
+
+## Commands
+
+Launch **Gale Development**, enter a world, press **F5**, and run **`crawler_spawn`** after the complete package has been installed. The plugin uses the installed game's `Console.SetConsoleEnabledForThisSession` API, preserving all Gale/Steam launch arguments and without enabling devcommands.
+
+| Command | Behaviour |
+| --- | --- |
+| `crawler_spawn` | Idle local preview on safe ground 10-15m ahead, retained until cleared. |
+| `crawler_anim idle` | Return preview to idle. |
+| `crawler_anim scream` | Reveal animation, then idle. |
+| `crawler_anim charge` | Actual terrain-following approach with a safe stop. |
+| `crawler_encounter` | Full test for caller; bypass biome/night/cooldown throughout; retain 30s isolation, cancellation, death/disconnect and timeout. |
+| `crawler_encounter tease` | Test the invisible spatial-audio tease without changing natural progression. |
+| `crawler_start` | Natural selection/progression rules, replacing only the trigger roll; preflight placement, then advance shared time to the next midnight window. |
+| `crawler_clear` | Remove caller's previews/encounter, sound and temporary state; retain persistent cooldown. |
+| `crawler_status` | Asset readiness, authority, phase, eligibility failure, online count, rate/cooldown, grounded and last reachable destinations, recovery time and failure reason. |
+
+With a ForestCrawler server present, state-changing debug commands require the host or a server administrator. Status and cleanup are available to the invoking player. `crawler_start` affects every player's world time, never rewinds it, never freezes the clock and does not shorten the real-time cooldown. It reports unmet criteria rather than waiting them out. No remote server deployment is performed by the local deployment script.
+
+## Encounter and probability
+
+Allowed biomes are Black Forest, Swamp and Mistlands. Require 30 seconds alone, with no other living player within 150m of either the player or the creature. Isolation uses server-side character ZDOs, including players with map sharing disabled, plus client heartbeats. It is not based on public map markers.
+
+The default midnight window is raw network-day fraction `[0.95, 1) union [0, 0.05)`: 120 real seconds with the installed 1,200-second day. This is independent of EnvMan's remapped/smoothed lighting fraction. A creature can therefore be cancelled by the window ending before the 180-second encounter maximum.
+
+Once per real second, the server evaluates `p = 1 - exp(-rate * elapsedHours / onlineCount)`. The default rate is 6.6943065 per eligible hour: approximately 20% over a continuously eligible two-minute window for one player, 10.56% for two, 5.43% for four, and 2.75% for eight. This is the **whole server's** chance; it is not independently rolled for each candidate. After a trigger, choose one eligible player uniformly. Missed ticks and periods without eligible players create no accumulated opportunities. At most one encounter, including a test or audio tail, owns the server slot.
+
+Natural progression is per player and world. The first encounter is always an invisible tease: one woo/whisper clip from safe ground at 60-90m, followed by cleanup. Only successful audio completion unlocks full encounters. Later draws are 50/50 tease/full; a blocked full draw is skipped, never rerolled. A shared 15-real-minute quiet interval starts at every natural activation. Full encounters additionally start the minimum 45-minute cooldown. Cancellation retains those intervals. Persistence lives under `BepInEx/config/ForestCrawler/`: `tease-WORLD.txt`, `quiet-WORLD.txt` and `cooldowns-WORLD.txt`. Debug encounters and previews never modify progression.
+
+Full encounters lure at 60-90m. A random first woo/whisper clip is followed by alternating woo and whisper, with one spatial source and no deliberate gaps or overlap, until discovery. If the initial lure remains undiscovered for 120 real seconds from activation, the server starts scream/reveal and chase from the current location, without relocation or I-see-you. Eligibility cancellation and the overall encounter timeout still take priority: the default two-minute natural midnight window can end before this fallback, while `crawler_encounter` bypasses the time requirement. Tease still plays only one clip. Discovery requires continuous direct camera aim (35m/0.4s) or unobstructed proximity (5m). The creature faces the target for 0.5 seconds, relocates once to 40-70m outside view in a different direction, and plays I-see-you from that location. The voice automatically starts a scream/reveal and fast charge. There is no second discovery or reminder loop. The target-client motor accelerates at 30m/s? toward `min(18, max(12, playerHorizontalSpeed + 3))`. Ground paths and swept body clearance respect obstacles; solid shelter blocks catching. Navigation projects airborne targets onto supporting ground, independently of actual three-dimensional catch checks. Failed replans retain the last usable route, then idle at its reachable endpoint while retrying. One five-second recovery deadline covers initial route failure, blocked movement and stalled progress; repeated unusable query results cannot extend it. Validated current-route movement or arrival at the current grounded destination resets recovery. Chase audio remains active while waiting. Permanent route failure cancels after five seconds, while eligibility cancellation remains immediate. Chase traversal supports continuous dry terrain up to the installed navigation agent's 85-degree limit; conservative spawn and teleport placement rules remain separate. Walls, overhangs, unsupported drops and solid obstacles are not bypassed. The body and foot-contact axes follow the support surface.
+
+During chase, a non-spatial heartbeat interpolates from 100 BPM at 100m to 230 BPM at 20m, clamped at both ends. Volume rises from .14 to .58 and distortion from .02 to .68. A 240ms first-thump extraction preserves the original pitch and fits the maximum beat cadence. Two DSP-scheduled sources discard missed beats instead of catching up. The close-chase loop fades in below 25m, reaches full volume at 20m, and exits above 30m. Output gains remain bounded.
+
+At a validated 2.5m catch, hide the world creature, stop pressure audio, and show the supplied model's face and shoulders on an isolated rendering camera. Three authored facial morphs and neck movements animate it for 4 seconds, extending only to a 5-second landing deadline. A random supplied caught scream plays in 2D, followed by the existing scream. Menus and console remain accessible. Movement/combat input and incoming damage are suppressed only for the captured local player; cleanup restores previous Rigidbody constraints without changing god mode.
+
+During chase, select a candidate 200-500m from the player using world-generation height/slope data. During capture, stream its terrain and objects while retaining the origin. Actual loaded physics must confirm dry terrain, slope, capsule clearance, no overhead structure, no liquid trigger, and no lava. The server grants one phase-bound coordinate permit after checking range, world height and isolation. Commit during the face overlay only after fresh validation. Any biome is allowed for this terminal landing. If loading/validation/authorization misses the deadline, retain the original position. Cancellation stops sound and restores control immediately; it never forces an unvalidated landing.
+
+Camera discovery runs after normal camera/animation updates, uses a direct viewport-centre ray against body/head sensors, and excludes only the local player's own colliders from obstruction queries. World obstructions and mist still block gaze. `crawler_status` includes gaze accumulation, range, target distance and the current blocking reason.
+
+## Authority, movement and cleanup
+
+The server owns eligibility, rate, cooldown, approved positions, phase and cancellation. The target supplies camera discovery and local loaded-scene terrain proposals. Every message has a protocol, encounter identifier and phase sequence; reports are bounded by phase, owner and distance. The target client's code-driven motor is the only transform authority. Neither root motion, a rigidbody nor a NavMeshAgent translates it.
+
+The authored 0.7-second running cycle covers 5.6m at 8m/s, with foot-contact metadata encoded in the rig report. Runtime animation follows distance actually travelled. Two-bone IK preserves world-space stance locks, releases swing feet, aligns contacts to ground and adjusts pelvis height. The route uses HumanoidBigNoSwim, ground/slope checks and capsule sweeps. Unsafe routes stop or cancel rather than pushing through obstacles. Moving-target updates retain the last validated route during a bounded retry period. A densely sampled direct route is used when ground and capsule clearance permit it; otherwise navigation uses reachable catch positions and locally repaired corridors. Near-target updates run more frequently, and the motor follows corners without cutting into obstacles.
+
+The server checks eligibility at 10Hz; the client checks local hazards every frame and stops if its authority lease expires after one second. Network cancellation is bounded by observation/transit time, not literally instantaneous across computers. Creature objects have no Character, enemy AI, network view, health/loot/name UI or player-blocking colliders. World changes clear client entities; only cooldown metadata persists, never encounter entities.
+
+Mist checks combine the installed ParticleMist API with sampled visibility and an eight-metre conservative cap in uncleared mist. This remains subject to actual Mistlands runtime testing.
+
+## Assets and reproducibility
+
+The opaque model-only horror material darkens the lower body, adds animated screen-space surface grain and offsets red/green/blue contour passes. Grain changes brightness, never transparency; the entire body writes depth and blocks the background. It does not alter the player's camera or other objects. In `BepInEx/config/norskit.ForestCrawler.cfg`, `[Visuals]` exposes `HorrorStrength` (default 0.9, zero restores the ordinary material), `ChromaticPixels` (1.8) and `GrainPixels` (1.2). Restart after editing these settings. The effect's visibility varies with scene lighting and distance; grain runs at six updates per second without full-screen flashes.
+
+`scripts/Prepare-Model.py`, `Animate-Model.py` `Validate-Model.py` and `Closeup-Model.py` produce the Blender source, FBX, rig metadata, previews and measured deformation/contact report. Three LODs contain 50,000 / 20,000 / 5,000 triangles. `unity/Assets/Editor/CrawlerBuild.cs` produces the prefab, materials, controller and platform bundle, rejecting missing clips/rig/meshes/audio. Original source hashes are recorded when importing. See `ATTRIBUTION.md` for model and supplied-audio provenance.
+
+Deployment touches ForestCrawler's folder and the explicitly migrated baseline rate in its own Development config, backs up an existing installation under `artifacts/backups`, and refuses to replace plugins while Valheim runs. `Rollback-Local.ps1` restores the two runtime files from a selected backup. The unrelated profile errors already present in Prod-v1 are not changed by this mod.

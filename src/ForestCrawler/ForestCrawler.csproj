@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../Environment.props" />
+  <PropertyGroup>
+    <TargetFramework>net481</TargetFramework><LangVersion>latest</LangVersion><Nullable>enable</Nullable>
+    <Version>0.2.4</Version><Deterministic>true</Deterministic><AssemblyName>ForestCrawler</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="BepInEx" HintPath="$(BepDir)/core/BepInEx.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(BepDir)/core/0Harmony.dll" Private="false" />
+    <Reference Include="$(GameDir)/valheim_Data/Managed/UnityEngine*.dll" Private="false" />
+    <Reference Include="assembly_valheim" HintPath="$(GameDir)/valheim_Data/Managed/assembly_valheim.dll" Private="false" />
+    <Reference Include="assembly_utils" HintPath="$(GameDir)/valheim_Data/Managed/assembly_utils.dll" Private="false" />
+    <Reference Include="Splatform" HintPath="$(GameDir)/valheim_Data/Managed/Splatform.dll" Private="false" />
+    <Reference Include="assembly_guiutils" HintPath="$(GameDir)/valheim_Data/Managed/assembly_guiutils.dll" Private="false" />
+  </ItemGroup>
+</Project>

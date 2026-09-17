@@ -1,0 +1,20 @@
+**/bin/
+**/obj/
+tools/
+artifacts/
+unity/Library/
+unity/Logs/
+unity/Temp/
+unity/UserSettings/
+assets/source/
+assets/prepared/
+Environment.local.props
+
+# Regenerated editor sources and local tooling state.
+unity/Assets/Editor/Generated/
+unity/Assets/Editor/Generated.meta
+.vs/
+**/*.user
+**/*.suo
+**/__pycache__/
+.DS_Store

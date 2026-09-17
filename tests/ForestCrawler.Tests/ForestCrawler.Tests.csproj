@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup><Compile Include="../../src/ForestCrawler/ChaseRecovery.cs" Link="ChaseRecovery.cs" /><Compile Include="../../src/ForestCrawler/Rules.cs" Link="Rules.cs" /><Compile Include="../../src/ForestCrawler/Cooldowns.cs" Link="Cooldowns.cs" /><Compile Include="../../src/ForestCrawler/Progression.cs" Link="Progression.cs" /></ItemGroup>
+</Project>

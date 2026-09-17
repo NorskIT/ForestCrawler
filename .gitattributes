@@ -1,0 +1,11 @@
+* text=auto eol=lf
+*.png binary
+*.fbx binary
+*.mp3 binary
+*.wav binary
+# Unity writes empty serialized fields with trailing spaces.
+*.meta whitespace=-blank-at-eol
+*.asset whitespace=-blank-at-eol
+*.prefab whitespace=-blank-at-eol
+*.controller whitespace=-blank-at-eol
+*.mat whitespace=-blank-at-eol

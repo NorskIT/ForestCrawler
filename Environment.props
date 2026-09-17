@@ -1,0 +1,6 @@
+<Project><PropertyGroup>
+  <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</GameDir>
+  <BepDir Condition="'$(BepDir)' == ''">$(APPDATA)\com.kesomannen.gale\valheim\profiles\Prod-v1\BepInEx</BepDir>
+</PropertyGroup>
+<Import Project="Environment.local.props" Condition="Exists('Environment.local.props')" />
+</Project>

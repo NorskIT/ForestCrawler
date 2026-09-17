@@ -1,0 +1,52 @@
+{
+  "height": 2.5,
+  "originalTriangles": 164736,
+  "lods": [
+    {
+      "name": "Crawler_LOD0",
+      "triangles": 50000,
+      "vertices": 25006
+    },
+    {
+      "name": "Crawler_LOD1",
+      "triangles": 20000,
+      "vertices": 10006
+    },
+    {
+      "name": "Crawler_LOD2",
+      "triangles": 5000,
+      "vertices": 2506
+    }
+  ],
+  "clips": {
+    "idle": 8.0,
+    "scream": 1.65,
+    "charge": 0.7
+  },
+  "strideMetres": 5.6,
+  "chargeCycleSeconds": 0.7,
+  "stanceEnd": 0.2,
+  "mapping": {
+    "Bone": "Head",
+    "Bone_end": "HeadTip",
+    "Bone.001": "Chest",
+    "Bone.002": "ShoulderL",
+    "Bone.003": "UpperArmL",
+    "Bone.004": "ForearmL",
+    "Bone.004_end": "HandL",
+    "Bone.005": "ShoulderR",
+    "Bone.006": "UpperArmR",
+    "Bone.007": "ForearmR",
+    "Bone.007_end": "HandR",
+    "Bone.008": "Spine",
+    "Bone.009": "HipR",
+    "Bone.010": "ThighR",
+    "Bone.011": "CalfR",
+    "Bone.011_end": "FootR",
+    "Bone.012": "HipL",
+    "Bone.013": "ThighL",
+    "Bone.014": "CalfL",
+    "Bone.014_end": "FootL"
+  },
+  "forward": "Unity +Z; Blender -Y"
+}
