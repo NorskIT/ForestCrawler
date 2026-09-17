@@ -11,6 +11,8 @@ $approach = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/ApproachP
 [IO.File]::WriteAllText((Join-Path $generated 'ApproachPath.cs'), $approach)
 $traversal = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/Traversal.cs')).Replace('namespace ForestCrawler;', 'namespace ForestCrawler {') + [Environment]::NewLine + '}'
 [IO.File]::WriteAllText((Join-Path $generated 'Traversal.cs'), $traversal)
+$surface = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/SurfacePath.cs')).Replace('namespace ForestCrawler;', 'namespace ForestCrawler {') + [Environment]::NewLine + '}'
+[IO.File]::WriteAllText((Join-Path $generated 'SurfacePath.cs'), $surface)
 $music = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/MusicSilence.cs')).Replace('namespace ForestCrawler;', 'namespace ForestCrawler {') + [Environment]::NewLine + '}'
 [IO.File]::WriteAllText((Join-Path $generated 'MusicSilence.cs'), $music)
 if (!$BlenderPath) { $BlenderPath = Join-Path $root 'tools/blender-4.5.3-windows-x64/blender.exe' }

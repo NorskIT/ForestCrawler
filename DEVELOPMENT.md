@@ -42,7 +42,7 @@ With a ForestCrawler server present, state-changing debug commands require the h
 
 ## Encounter and probability
 
-During both full and tease encounters, only the selected client's MusicMan audio source is temporarily muted. Suppression begins when the lure/tease activates, persists through relocation, recovery and capture, and ends on completion, cancellation, clearing or world exit. Previews do not mute music. Playback scheduling and volume preferences remain untouched; cleanup restores the source's previous mute flag, including when it was already muted. A replaced music source is acquired and the old one released. Monster audio and environmental sound effects retain their existing behavior.
+During both full and tease encounters, only the selected client's actual `MusicMan.m_musicSource` is temporarily muted; hierarchy-based audio-source lookup is not used. Suppression begins when the lure/tease activates, persists through relocation, recovery and capture, and ends on completion, cancellation, clearing or world exit. Previews do not mute music. Playback scheduling and volume preferences remain untouched; cleanup restores the source's previous mute flag, including when it was already muted. A replaced music source is acquired and the old one released. Monster audio and environmental sound effects retain their existing behavior.
 
 Allowed biomes are Black Forest, Swamp and Mistlands. Require 30 seconds alone, with no other living player within 150m of either the player or the creature. Isolation uses server-side character ZDOs, including players with map sharing disabled, plus client heartbeats. It is not based on public map markers.
 
@@ -61,6 +61,8 @@ At a validated 2.5m catch, hide the world creature, stop pressure audio, and sho
 During chase, select a candidate 200-500m from the player using world-generation height/slope data. During capture, stream its terrain and objects while retaining the origin. Actual loaded physics must confirm dry terrain, slope, capsule clearance, no overhead structure, no liquid trigger, and no lava. The server grants one phase-bound coordinate permit after checking range, world height and isolation. Commit during the face overlay only after fresh validation. Any biome is allowed for this terminal landing. If loading/validation/authorization misses the deadline, retain the original position. Cancellation stops sound and restores control immediately; it never forces an unvalidated landing.
 
 Camera discovery runs after normal camera/animation updates, uses a direct viewport-centre ray against body/head sensors, and excludes only the local player's own colliders from obstruction queries. World obstructions and mist still block gaze. `crawler_status` includes gaze accumulation, range, target distance and the current blocking reason.
+
+Rock approaches use the game's navigation first, with a bounded local surface search when its endpoint cannot reach the elevated target. The search follows actual collision geometry, checks every edge and approaches a visible point within capture range. For distant targets, a navigation route is connected to the local rock-surface route. Accessible slopes up to 85 degrees are supported; an entirely vertical or enclosed obstacle can still end the encounter after the existing five-second recovery period.
 
 ## Authority, movement and cleanup
 

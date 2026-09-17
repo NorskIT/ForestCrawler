@@ -93,6 +93,30 @@ public static class CrawlerPreview
         UnityEngine.Object.DestroyImmediate(ramp); UnityEngine.Object.DestroyImmediate(rampMesh);
         Debug.Log("FORESTCRAWLER_APPROACH_OK: moving target, no navmesh, wall rejection, slope, ledge, bounded range, no partial paths");
     }
+    private static void ValidateRockRoute()
+    {
+        var floor=GameObject.CreatePrimitive(PrimitiveType.Cube); floor.transform.position=Vector3.down*.5f; floor.transform.localScale=new Vector3(80,1,80);
+        var rock=new GameObject("RockWithSteepFrontAndAccessibleBack");
+        var mesh=new Mesh();
+        mesh.vertices=new[]{new Vector3(-3,0,0),new Vector3(3,0,0),new Vector3(-3,3,0),new Vector3(3,3,0),new Vector3(-3,0,6),new Vector3(3,0,6)};
+        mesh.triangles=new[]{0,2,1,1,2,3,2,4,3,3,4,5,0,4,2,1,3,5,0,1,4,1,5,4}; mesh.RecalculateNormals();
+        rock.AddComponent<MeshCollider>().sharedMesh=mesh; Physics.SyncTransforms();
+        bool Accept(RaycastHit hit)=>true;
+        bool Ground(Vector3 point,out Vector3 ground)=>Traversal.Support(point,1,Accept,out ground,out var normal) && Traversal.ClearBody(ground,normal,1);
+        bool Segment(Vector3 a,Vector3 b)=>Traversal.Segment(a,b,1,Accept);
+        var from=new Vector3(0,0,-5); var target=new Vector3(0,2.5f,1);
+        bool Goal(Vector3 point)=>!Physics.Linecast(point+Vector3.up*1.2f,target+Vector3.up*1.2f,1);
+        var route=new System.Collections.Generic.List<Vector3>();
+        if(ApproachPath.TryBuild(from,target,1.5f,Ground,Segment,route)) throw new Exception("Rock fixture must obstruct the direct approach");
+        var timer=System.Diagnostics.Stopwatch.StartNew();
+        if(!SurfacePath.TryBuild(from,target,1.5f,Ground,Segment,Goal,route)) throw new Exception("Local surface search did not route around the rock and climb its accessible back: "+Traversal.LastFailure);
+        if(!route.Any(p=>p.z>3) || Vector3.Distance(route[route.Count-1],target)>1.5f) throw new Exception("Rock route did not reach the elevated target through the accessible side");
+        for(int i=1;i<route.Count;i++) if(!Segment(route[i-1],route[i])) throw new Exception("Rock route contains an invalid edge");
+        Debug.Log("FORESTCRAWLER_ROCK_OK: waypoints="+route.Count+", searchMs="+timer.ElapsedMilliseconds);
+        var wall=GameObject.CreatePrimitive(PrimitiveType.Cube); wall.transform.position=new Vector3(0,2,-1); wall.transform.localScale=new Vector3(40,4,.5f); Physics.SyncTransforms();
+        if(SurfacePath.TryBuild(from,target,1.5f,Ground,Segment,Goal,route)) throw new Exception("Surface search crossed a blocking wall");
+        UnityEngine.Object.DestroyImmediate(wall); UnityEngine.Object.DestroyImmediate(rock); UnityEngine.Object.DestroyImmediate(mesh); UnityEngine.Object.DestroyImmediate(floor);
+    }
     private static void ValidateMusicSilence()
     {
         var owner=new GameObject("MusicMuteFixture"); var music=owner.AddComponent<AudioSource>();
@@ -121,6 +145,7 @@ public static class CrawlerPreview
         EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         ValidateCloseApproach();
         ValidateMusicSilence();
+        ValidateRockRoute();
         string output = Path.GetFullPath(Path.Combine(Application.dataPath, "../../artifacts/editor-preview")); Directory.CreateDirectory(output);
         var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Crawler/ForestCrawler.prefab");
         var root = UnityEngine.Object.Instantiate(prefab); root.name = "PreviewCreature";

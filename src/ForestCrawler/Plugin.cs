@@ -8,7 +8,7 @@ namespace ForestCrawler;
 [DefaultExecutionOrder(10000)]
 public sealed class Plugin : BaseUnityPlugin
 {
-    public const string Id = "norskit.ForestCrawler", Version = "0.2.5";
+    public const string Id = "norskit.ForestCrawler", Version = "0.2.6";
     internal static Plugin Instance = null!;
     internal Settings Settings = null!;
     internal AssetStore Assets = null!;

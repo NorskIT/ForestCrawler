@@ -88,7 +88,8 @@ internal static class World
     internal static bool ChargeRoute(Vector3 from, Vector3 target, bool bypassBiome, float stopRadius, List<Vector3> result)
     {
         bool GroundInBiome(Vector3 point, out Vector3 ground) => ChaseGround(point, out ground) && (bypassBiome || Allowed(ground));
-        if (ApproachPath.TryBuild(from, target, stopRadius, GroundInBiome, ChaseSegment, result, 90))
+        bool GoalClear(Vector3 point) => !Obstructed(point + Vector3.up * 1.2f, target + Vector3.up * 1.2f);
+        if (ApproachPath.TryBuild(from, target, stopRadius, GroundInBiome, ChaseSegment, result, 90) && GoalClear(result[result.Count-1]))
         { LastRouteFailure = "Validated grounded approach"; return true; }
         LastRouteFailure = "No reachable grounded destination: " + Traversal.LastFailure;
         var away = Vector3.ProjectOnPlane(from - target, Vector3.up).normalized;
@@ -97,8 +98,25 @@ internal static class World
             var candidate = target + Quaternion.Euler(0, angle, 0) * away * (stopRadius - .25f);
             if (!GroundInBiome(candidate, out var goal) || Vector3.Distance(goal, target) > stopRadius ||
                 Obstructed(goal + Vector3.up * 1.2f, target + Vector3.up * 1.2f)) continue;
-            if (Route(from, goal, bypassBiome, result) && Vector3.Distance(result[result.Count-1], target) <= stopRadius) return true;
+            if (Route(from, goal, bypassBiome, result) && Vector3.Distance(result[result.Count-1], target) <= stopRadius && GoalClear(result[result.Count-1])) return true;
         }
+        if (SurfacePath.TryBuild(from,target,stopRadius,GroundInBiome,ChaseSegment,GoalClear,result))
+        { LastRouteFailure = "Validated local surface route"; return true; }
+        if (Vector3.Distance(from,target)>24)
+        {
+            // Connect the ordinary navigation route to a local rock-surface route.
+            var prefix=new List<Vector3>(); var suffix=new List<Vector3>();
+            foreach(float angle in new[]{0f,45f,-45f,90f,-90f,180f,135f,-135f})
+            {
+                var probe=target+Quaternion.Euler(0,angle,0)*away*10;
+                if(!GroundInBiome(probe,out var entry) || !Route(from,entry,bypassBiome,prefix)) continue;
+                entry=prefix[prefix.Count-1];
+                if(!SurfacePath.TryBuild(entry,target,stopRadius,GroundInBiome,ChaseSegment,GoalClear,suffix) || prefix.Count+suffix.Count>512) continue;
+                result.Clear(); result.AddRange(prefix); result.AddRange(suffix);
+                LastRouteFailure="Navigation connected to local surface route"; return true;
+            }
+        }
+        LastRouteFailure = "No grounded approach after navigation and bounded surface search: " + Traversal.LastFailure;
         result.Clear(); return false;
     }
     internal static bool Obstructed(Vector3 from, Vector3 to) => Physics.Linecast(from, to, Solids, QueryTriggerInteraction.Ignore);

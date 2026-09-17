@@ -1,4 +1,4 @@
-param([string]$Name = ('runtime-' + (Get-Date -Format 'yyyyMMdd-HHmmss')), [switch]$AssetsOnly)
+param([string]$Name = ('runtime-' + (Get-Date -Format 'yyyyMMdd-HHmmss')), [switch]$AssetsOnly, [switch]$MusicOnly)
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if ($Name -notmatch '^[a-zA-Z0-9-]+$') { throw 'Invalid run name.' }
@@ -16,13 +16,15 @@ Copy-Item -LiteralPath (Join-Path $root 'tests/ForestCrawler.RuntimeSmoke/bin/Re
 $priorDoorstop = $env:DOORSTOP_TARGET_ASSEMBLY
 $priorOutput = $env:FORESTCRAWLER_SMOKE_OUTPUT
 $priorAssets = $env:FORESTCRAWLER_SMOKE_ASSETS_ONLY
+$priorMusic = $env:FORESTCRAWLER_SMOKE_MUSIC_ONLY
 try {
     $env:DOORSTOP_TARGET_ASSEMBLY = "$run/BepInEx/core/BepInEx.Preloader.dll"
     $env:FORESTCRAWLER_SMOKE_OUTPUT = $run
     $env:FORESTCRAWLER_SMOKE_ASSETS_ONLY = if ($AssetsOnly) { "1" } else { "0" }
+    $env:FORESTCRAWLER_SMOKE_MUSIC_ONLY = if ($MusicOnly) { "1" } else { "0" }
     $game = 'C:\Program Files (x86)\Steam\steamapps\common\Valheim\valheim.exe'
     $arguments = @('-batchmode','-screen-fullscreen','0','-screen-width','1280','-screen-height','720','-savedir',('"' + "$run/saves" + '"'),'-logFile',('"' + "$run/unity.log" + '"'),'--doorstop-enabled','true','--doorstop-target-assembly',('"' + "$run/BepInEx/core/BepInEx.Preloader.dll" + '"'))
     $process = Start-Process -FilePath $game -ArgumentList $arguments -WorkingDirectory $run -WindowStyle Hidden -PassThru
     $process.Id | Set-Content "$run/process-id.txt"
     Write-Output "Isolated Valheim process $($process.Id), logs: $run"
-} finally { $env:DOORSTOP_TARGET_ASSEMBLY = $priorDoorstop; $env:FORESTCRAWLER_SMOKE_OUTPUT = $priorOutput; $env:FORESTCRAWLER_SMOKE_ASSETS_ONLY = $priorAssets }
+} finally { $env:DOORSTOP_TARGET_ASSEMBLY = $priorDoorstop; $env:FORESTCRAWLER_SMOKE_OUTPUT = $priorOutput; $env:FORESTCRAWLER_SMOKE_ASSETS_ONLY = $priorAssets; $env:FORESTCRAWLER_SMOKE_MUSIC_ONLY = $priorMusic }

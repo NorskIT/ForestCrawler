@@ -41,9 +41,117 @@ public sealed class SmokePlugin : BaseUnityPlugin
         if (test==null || !test.fleeDuringCharge || ForestCrawler.Capture.Active || __instance!=Player.m_localPlayer || !test.Mod.View.Status.Contains("presentation=Charge")) return;
         if(test.fleeDirection.sqrMagnitude>.01f) { __instance.SetLookDir(test.fleeDirection); movedir=Vector3.forward; run=true; }
     }
+    private IEnumerator MusicRegression()
+    {
+        var manager=MusicMan.instance;
+        var actual=(AudioSource)AccessTools.Field(typeof(MusicMan),"m_musicSource").GetValue(manager);
+        var first=manager.GetComponentInChildren<AudioSource>(true);
+        Logger.LogInfo("Music source diagnostic: first="+first.name+", actual="+actual.name+", same="+(first==actual));
+        float previousMaster=MusicMan.m_masterMusicVolume;
+        float savedMusicPreference=PlatformPrefs.GetFloat("MusicVolume",1);
+        var decoy=manager.gameObject.AddComponent<AudioSource>();
+        decoy.mute=false;
+        try
+        {
+            MusicMan.m_masterMusicVolume=.75f;
+            var track=manager.m_music.First(m=>m.m_enabled && m.m_clips.Length>0 && m.m_clips[0]);
+            manager.TriggerMusic(track.m_name);
+            yield return new WaitForSecondsRealtime(6);
+            if(!Try(()=>
+            {
+                Check(actual.isPlaying && actual.volume>0 && !actual.mute,"Actual MusicMan source plays at nonzero volume before encounter");
+                Check(manager.GetComponentInChildren<AudioSource>(true)!=actual,"Fixture distinguishes hierarchy lookup from actual music source");
+            })) yield break;
+            foreach(var kind in new[]{EncounterKind.Tease,EncounterKind.Full})
+            {
+                string id="music-fixture-"+kind; int seq=0;
+                Mod.View.Prepare(id,seq,true,false,Player.m_localPlayer.transform.position,Mod.Settings,kind);
+                var phases=kind==EncounterKind.Tease ? new[]{Phase.Tease} : new[]{Phase.Lure,Phase.Stare,Phase.Relocating,Phase.Watching,Phase.Reveal,Phase.Charge,Phase.Caught};
+                forceRouteFailure=forceMovementFailure=true;
+                foreach(var phase in phases)
+                {
+                    if(!Try(()=>Mod.View.State(id,++seq,phase,Player.m_localPlayer.transform.position+Vector3.forward*12))) yield break;
+                    float until=Time.realtimeSinceStartup+.4f;
+                    while(Time.realtimeSinceStartup<until) { Mod.View.Lease(id,seq); yield return null; }
+                    if(!Try(()=>
+                    {
+                        CheckMusic(true,kind+" "+phase+" mutes exact playing MusicMan source");
+                        Check(!decoy.mute,"Unrelated source remains unmuted in "+phase);
+                        MusicMan.m_masterMusicVolume=.9f;
+                        Check(actual.isPlaying,"Music scheduling continues under mute in "+phase);
+                    })) yield break;
+                }
+                if(!Try(()=>
+                {
+                    Mod.View.Clear();
+                    CheckMusic(false,kind+" cleanup restores actual music source");
+                    Check(MusicMan.m_masterMusicVolume==.9f,"Cleanup preserves volume changes made during encounter");
+                })) yield break;
+            }
+            if(!Try(()=>
+            {
+                Check(PlatformPrefs.GetFloat("MusicVolume",1)==savedMusicPreference,"Encounter never changes saved MusicVolume preference");
+                Logger.LogInfo("Focused music regression passed; continuing to elevated rock target fixture.");
+            })) yield break;
+        }
+        finally
+        {
+            forceRouteFailure=forceMovementFailure=false;
+            Mod.View.Clear(); MusicMan.m_masterMusicVolume=previousMaster;
+            if(decoy) UnityEngine.Object.Destroy(decoy);
+        }
+        yield return RockRegression();
+        if(!failed) File.WriteAllText(Path.Combine(output,"verified.txt"),"Focused actual-Valheim regression passed: actual MusicMan source with nonzero track volume, independent source inspection, decoy and injected presentation phases; production charge motor climbs an isolated rock fixture to an elevated player. Not a natural full encounter or human listening test.");
+        Application.Quit();
+    }
+    private IEnumerator RockRegression()
+    {
+        var origin=Player.m_localPlayer.transform.position;
+        var center=origin+Vector3.up*100;
+        var floor=GameObject.CreatePrimitive(PrimitiveType.Cube); floor.name="SmokeRockFloor"; floor.transform.position=center+Vector3.down*.5f; floor.transform.localScale=new Vector3(80,1,80);
+        var rock=new GameObject("SmokeClimbableRock"); rock.transform.position=center;
+        var mesh=new Mesh(); mesh.vertices=new[]{new Vector3(-3,0,0),new Vector3(3,0,0),new Vector3(-3,3,0),new Vector3(3,3,0),new Vector3(-3,0,6),new Vector3(3,0,6)};
+        mesh.triangles=new[]{0,2,1,1,2,3,2,4,3,3,4,5,0,4,2,1,3,5,0,1,4,1,5,4}; mesh.RecalculateNormals();
+        rock.AddComponent<MeshCollider>().sharedMesh=mesh; Physics.SyncTransforms();
+        try
+        {
+            Player.m_localPlayer.TeleportTo(center+new Vector3(0,2.7f,1),Quaternion.identity,true);
+            yield return new WaitForSecondsRealtime(5);
+            string id="rock-fixture"; int seq=1;
+            if(!Try(()=>
+            {
+                Check(Player.m_localPlayer.transform.position.y>center.y+2,"Rock fixture player stands on elevated collider");
+                Mod.View.Prepare(id,0,true,false,center+new Vector3(0,0,-5),Mod.Settings,EncounterKind.Full);
+                Mod.View.State(id,seq,Phase.Lure,center+new Vector3(0,0,-5));
+                Mod.View.State(id,++seq,Phase.Charge,center+new Vector3(0,0,-5));
+            })) yield break;
+            float until=Time.realtimeSinceStartup+15, maximumHeight=0, maximumZ=0;
+            bool finished=false;
+            while(Time.realtimeSinceStartup<until)
+            {
+                Mod.View.Lease(id,seq);
+                var creature=GameObject.Find("ForestCrawler_Local");
+                if(creature) { maximumHeight=Mathf.Max(maximumHeight,creature.transform.position.y-center.y); maximumZ=Mathf.Max(maximumZ,creature.transform.position.z-center.z); }
+                finished=(bool)AccessTools.Field(typeof(Presentation),"awaitingFinish").GetValue(Mod.View);
+                if(finished) break;
+                yield return null;
+            }
+            if(!Try(()=>
+            {
+                Check(finished,"Production charge reaches player on rock: "+Mod.View.Status+"; route="+ForestCrawler.World.LastRouteFailure);
+                Check(maximumHeight>1 && maximumZ>3,"Charge physically goes around steep face and climbs accessible rock side");
+                CheckMusic(true,"Rock pursuit retains actual music suppression");
+            })) yield break;
+        }
+        finally
+        {
+            Mod.View.Clear(); UnityEngine.Object.Destroy(rock); UnityEngine.Object.Destroy(mesh); UnityEngine.Object.Destroy(floor);
+            Player.m_localPlayer.TeleportTo(origin,Quaternion.identity,true);
+        }
+    }
     private void CheckMusic(bool muted, string message)
     {
-        var source=MusicMan.instance ? MusicMan.instance.GetComponentInChildren<AudioSource>(true) : null;
+        var source=MusicMan.instance ? (AudioSource)AccessTools.Field(typeof(MusicMan),"m_musicSource").GetValue(MusicMan.instance) : null;
         Check(source && source.mute==muted,message);
     }
     private static bool NoCloud(ref bool __result) { __result=false; return false; }
@@ -134,6 +242,11 @@ public sealed class SmokePlugin : BaseUnityPlugin
             player.TeleportTo(current+Vector3.up*3,Quaternion.identity,true);
         })) yield break;
         yield return new WaitForSecondsRealtime(15);
+        if(Environment.GetEnvironmentVariable("FORESTCRAWLER_SMOKE_MUSIC_ONLY")=="1")
+        {
+            yield return MusicRegression();
+            yield break;
+        }
         // Select a reachable preview position in this procedurally generated fixture.
         // A valid isolated patch of ground alone need not have a route back to the player.
         Vector3 previewDirection=Vector3.zero;

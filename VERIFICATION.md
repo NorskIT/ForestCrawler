@@ -1,6 +1,16 @@
 # ForestCrawler verification
 
+## 0.2.6 exact music source and elevated rock targets
+
+The original bug is reproduced in actual Valheim: the hierarchy lookup returns `ocean_ambient_loop`, while the private `MusicMan.m_musicSource` field points to `music`. Focused run `artifacts/runtime-20260917-222738` passes 38 assertions with the corrected DLL. It plays a real game track at nonzero source volume, independently reads the exact source, inserts a decoy source, verifies mute/restoration across injected tease/full presentation phases and verifies saved MusicVolume is untouched. In the same isolated world, the production chase motor routes around a steep-front rock fixture, climbs its accessible back and reaches the elevated player. The fixture has no saved/network entity and is removed afterwards. This is not a human listening test or proof that every natural rock is traversable.
+
+Full actual-Valheim run `artifacts/runtime-20260917-222935` passes all 72 checks, now inspecting the exact MusicMan source. It completes tease, discovery, relocation, recovery and capture/teleport; the target runs 48m and jumps 12 times before capture. Both cancellation and completion restore music. Tests of route failure and capture fallback retain the previously documented injected fixtures.
+
+Unity tests validate the same production surface search against a rock with an inaccessible front and accessible back, with every resulting edge rechecked; a blocking wall remains impassable. The successful editor search returned 31 waypoints in approximately 31ms on this machine. Existing slope, foot-contact and mute ownership tests also pass. Release compilation and the 85 core checks are run by the package build. Dedicated/two-client behavior and subjective audio are not newly verified.
+
 ## 0.2.5 encounter music suppression
+
+Correction discovered in 0.2.6: the source-specific assertions below used the same hierarchy lookup as production. On the installed game it selected `ocean_ambient_loop`, so those assertions did not establish that the actual music source was muted. They are preserved as historical test results, not valid evidence of music suppression. The 0.2.6 regression inspects `MusicMan.m_musicSource` independently and requires an actively playing track with nonzero source volume.
 
 Unity tests of the production MusicSilence class pass active suppression, inactive preview behavior, repeated acquisition/cleanup, preservation of changing volume and prior mute state, source replacement/destruction and late initialization. Existing terrain/animation editor checks also pass.
 

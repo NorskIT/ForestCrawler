@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using HarmonyLib;
 using UnityEngine;
 
 namespace ForestCrawler;
@@ -18,7 +19,9 @@ internal sealed class Presentation
     private EncounterKind kind;
     private ChaseAudio? chaseAudio;
     private readonly MusicSilence music = new();
-    private static AudioSource? MusicSource => MusicMan.instance ? MusicMan.instance.GetComponentInChildren<AudioSource>(true) : null;
+    private static readonly AccessTools.FieldRef<MusicMan, AudioSource> ReadMusicSource =
+        AccessTools.FieldRefAccess<MusicMan, AudioSource>("m_musicSource");
+    private static AudioSource? MusicSource => MusicMan.instance ? ReadMusicSource(MusicMan.instance) : null;
     private Capture? capture;
     private Vector3? landingCandidate;
     private bool captureFinished;
@@ -38,7 +41,7 @@ internal sealed class Presentation
     private int successfulReplans;
     private int corner;
     private float Now => Time.realtimeSinceStartup;
-    internal string Status => $"type={kind}; musicSuppressed={music.Active}; heartbeat={chaseAudio?.Bpm ?? 0:F0} BPM; chaseReplans={successfulReplans}; groundTarget={(hasGroundTarget ? groundTarget.ToString("F1") : "unavailable")}; lastReachable={lastReachable:F1}; recovery={(recovery.Active ? recovery.Remaining(Now).ToString("F2") : "none")}; routeReason={recovery.Reason}; teleport={capture?.Status ?? "none"}; presentation={(preview ? "preview/" + clip : id == "" ? "none" : phase.ToString())}; authorityLeaseAge={Now - leaseAt:F2}s; gaze={gaze:F2}/{settings.GazeSeconds:F2}s ({gazeReason}); gazeRange={settings.GazeDistance:F0}m; targetDistance={(Player.m_localPlayer && creature ? Vector3.Distance(Player.m_localPlayer.transform.position, position) : 0):F1}m";
+    internal string Status => $"type={kind}; music=({music.Status}); heartbeat={chaseAudio?.Bpm ?? 0:F0} BPM; chaseReplans={successfulReplans}; groundTarget={(hasGroundTarget ? groundTarget.ToString("F1") : "unavailable")}; lastReachable={lastReachable:F1}; recovery={(recovery.Active ? recovery.Remaining(Now).ToString("F2") : "none")}; routeReason={recovery.Reason}; teleport={capture?.Status ?? "none"}; presentation={(preview ? "preview/" + clip : id == "" ? "none" : phase.ToString())}; authorityLeaseAge={Now - leaseAt:F2}s; gaze={gaze:F2}/{settings.GazeSeconds:F2}s ({gazeReason}); gazeRange={settings.GazeDistance:F0}m; targetDistance={(Player.m_localPlayer && creature ? Vector3.Distance(Player.m_localPlayer.transform.position, position) : 0):F1}m";
     internal Presentation(Plugin plugin) { this.plugin = plugin; settings = plugin.Settings; }
     internal void Debug(string command)
     {
@@ -215,7 +218,7 @@ internal sealed class Presentation
             }
             else if (Now - searchAt < 6 && camera && !World.Obstructed(camera.transform.position, ground + Vector3.up * 1.2f)) continue;
             if (kind == EncounterKind.Tease) { route.Clear(); route.Add(ground); route.Add(center); }
-            else if (!World.Route(ground, center, test, route)) continue;
+            else if (!World.TargetGround(center,out var destination) || !World.ChargeRoute(ground, destination, test, 2, route)) continue;
             searching = false; plugin.Network.Candidate(id, sequence, ground, route); return;
         }
     }
@@ -275,7 +278,7 @@ internal sealed class Presentation
         if (reroute && Now >= nextRoute)
         {
             nextRoute = Now + (near ? .1f : .25f);
-            if (hasGroundTarget && World.ChargeRoute(position, groundTarget, test || preview, stop, proposedRoute))
+            if (hasGroundTarget && World.ChargeRoute(position, groundTarget, test || preview, Mathf.Max(.5f, stop-.5f), proposedRoute))
             {
                 route.Clear(); route.AddRange(proposedRoute); corner = 0; routedTarget = groundTarget;
                 lastReachable = route[route.Count-1]; currentRoute = true; successfulReplans++;
@@ -283,7 +286,7 @@ internal sealed class Presentation
             }
             else Recovery(hasGroundTarget ? World.LastRouteFailure : "No supporting ground below target");
         }
-        bool arrived = hasGroundTarget && Vector3.Distance(position, groundTarget) <= stop &&
+        bool arrived = hasGroundTarget && Vector3.Distance(position, groundTarget) <= Mathf.Max(.5f, stop-.5f) &&
             CatchClear(position, groundTarget) && World.ChaseSegment(position, groundTarget);
         if (arrived && currentRoute) Recovered();
         if (recovery.Expired(Now))
@@ -313,8 +316,10 @@ internal sealed class Presentation
             float distance = Vector3.Distance(position, next);
             if (distance < .000001f)
             {
-                if (Vector3.Distance(position, route[corner]) < .01f) { corner++; continue; }
-                Recovery("No progress on current segment"); break;
+                if (Vector3.Distance(position, route[corner]) < .01f ||
+                    (World.ChaseGround(route[corner],out var refreshedCorner) && Vector3.Distance(position,refreshedCorner)<.01f))
+                { corner++; continue; }
+                Recovery($"No progress on current segment; from={position:F3}; waypoint={route[corner]:F3}; groundTarget={groundTarget:F3}"); break;
             }
             // Projection can move a point farther than the budget on abrupt terrain transitions.
             if (distance > remaining + .01f) { Recovery("Support projection exceeds movement budget"); break; }
