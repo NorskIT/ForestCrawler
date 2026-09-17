@@ -42,6 +42,8 @@ With a ForestCrawler server present, state-changing debug commands require the h
 
 ## Encounter and probability
 
+During both full and tease encounters, only the selected client's MusicMan audio source is temporarily muted. Suppression begins when the lure/tease activates, persists through relocation, recovery and capture, and ends on completion, cancellation, clearing or world exit. Previews do not mute music. Playback scheduling and volume preferences remain untouched; cleanup restores the source's previous mute flag, including when it was already muted. A replaced music source is acquired and the old one released. Monster audio and environmental sound effects retain their existing behavior.
+
 Allowed biomes are Black Forest, Swamp and Mistlands. Require 30 seconds alone, with no other living player within 150m of either the player or the creature. Isolation uses server-side character ZDOs, including players with map sharing disabled, plus client heartbeats. It is not based on public map markers.
 
 The default midnight window is raw network-day fraction `[0.95, 1) union [0, 0.05)`: 120 real seconds with the installed 1,200-second day. This is independent of EnvMan's remapped/smoothed lighting fraction. A creature can therefore be cancelled by the window ending before the 180-second encounter maximum.

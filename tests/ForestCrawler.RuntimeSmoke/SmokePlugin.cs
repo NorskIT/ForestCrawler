@@ -41,6 +41,11 @@ public sealed class SmokePlugin : BaseUnityPlugin
         if (test==null || !test.fleeDuringCharge || ForestCrawler.Capture.Active || __instance!=Player.m_localPlayer || !test.Mod.View.Status.Contains("presentation=Charge")) return;
         if(test.fleeDirection.sqrMagnitude>.01f) { __instance.SetLookDir(test.fleeDirection); movedir=Vector3.forward; run=true; }
     }
+    private void CheckMusic(bool muted, string message)
+    {
+        var source=MusicMan.instance ? MusicMan.instance.GetComponentInChildren<AudioSource>(true) : null;
+        Check(source && source.mute==muted,message);
+    }
     private static bool NoCloud(ref bool __result) { __result=false; return false; }
     private static bool IsolatedSavePath(ref string __result) { __result=Path.Combine(Environment.GetEnvironmentVariable("FORESTCRAWLER_SMOKE_OUTPUT")!,"saves"); return false; }
     private void Awake()
@@ -185,6 +190,7 @@ public sealed class SmokePlugin : BaseUnityPlugin
         if(!Try(()=>
         {
             Check(!GameObject.Find("ForestCrawler_Local"),"crawler_clear removes preview");
+            CheckMusic(false,"Preview leaves game music unmuted");
             global::Console.instance.TryRunCommand("crawler_encounter tease");
         })) yield break;
         float teaseDeadline=Time.realtimeSinceStartup+14;
@@ -192,6 +198,7 @@ public sealed class SmokePlugin : BaseUnityPlugin
         if(!Try(()=>
         {
             Check(Mod.View.Status.Contains("presentation=Tease"),"Manual tease activates");
+            CheckMusic(true,"Tease mutes the actual MusicMan source");
             var tease=GameObject.Find("ForestCrawler_LocalTease");
             Check(tease && tease.GetComponentsInChildren<Renderer>().Length==0,"Tease has no visible renderer or model");
             Check(tease!.GetComponent<AudioSource>().spatialBlend==1 && tease.GetComponent<AudioSource>().isPlaying,"Tease plays a single spatial opening clip");
@@ -200,6 +207,7 @@ public sealed class SmokePlugin : BaseUnityPlugin
         if(!Try(()=>
         {
             Check(!GameObject.Find("ForestCrawler_LocalTease"),"Tease clears itself after audio finishes");
+            CheckMusic(false,"Tease completion restores music");
             global::Console.instance.TryRunCommand("crawler_encounter");
         })) yield break;
         yield return new WaitForSecondsRealtime(14);
@@ -208,6 +216,7 @@ public sealed class SmokePlugin : BaseUnityPlugin
         if(!Try(()=>
         {
             Check(Mod.View.Status.Contains("presentation=Lure"),"Undiscovered full encounter remains in lure");
+            CheckMusic(true,"Full lure suppresses actual game music");
             lureSource=GameObject.Find("ForestCrawler_Local").GetComponent<AudioSource>();
             firstLure=lureSource.clip;
         })) yield break;
@@ -264,6 +273,7 @@ public sealed class SmokePlugin : BaseUnityPlugin
         {
             Check(Mod.View.Status.Contains("presentation=Charge"),"Persistent obstruction retains encounter before five seconds");
             Check(GameObject.Find("ForestCrawler_ChaseAudio"),"Recovery retains chase pressure audio");
+            CheckMusic(true,"Music remains muted during route recovery");
         })) yield break;
         yield return new WaitForSecondsRealtime(1.4f);
         if(!Try(()=>
@@ -271,6 +281,7 @@ public sealed class SmokePlugin : BaseUnityPlugin
             forceRouteFailure=forceMovementFailure=false;
             Check(!GameObject.Find("ForestCrawler_Local"),"Persistent obstruction cancels after five seconds");
             Check(!GameObject.Find("ForestCrawler_ChaseAudio"),"Recovery cancellation cleans chase audio immediately");
+            CheckMusic(false,"Encounter cancellation restores game music");
         })) yield break;
         yield return null;
         if(!Try(()=>global::Console.instance.TryRunCommand("crawler_encounter"))) yield break;
@@ -300,6 +311,7 @@ public sealed class SmokePlugin : BaseUnityPlugin
         if(!Try(()=>
         {
             Check(Mod.View.Status.Contains("Watching"),"First discovery relocates and starts I-see-you");
+            CheckMusic(true,"Relocation preserves music suppression");
             var creature=GameObject.Find("ForestCrawler_Local");
             Check(creature.GetComponent<AudioSource>().clip==Mod.Assets.Audio["voice"],"I-see-you plays from relocated source");
             float range=Vector3.Distance(creature.transform.position,Player.m_localPlayer.transform.position);
@@ -332,6 +344,7 @@ public sealed class SmokePlugin : BaseUnityPlugin
             Check((int)AccessTools.Field(typeof(Presentation),"successfulReplans").GetValue(Mod.View)>0,"Chase replans against the moving target before capture");
             Check(Player.m_localPlayer.GetComponent<Rigidbody>().constraints==RigidbodyConstraints.FreezeAll,"Capture temporarily locks player movement");
             Check(!GameObject.Find("ForestCrawler_ChaseAudio"),"Catch stops heartbeat and close chase audio");
+            CheckMusic(true,"Capture preserves music suppression");
             var hidden=GameObject.Find("ForestCrawler_Local");
             Check(hidden.GetComponentsInChildren<Renderer>().All(r=>!r.enabled),"Catch hides world creature");
             Check(hidden.GetComponentsInChildren<Collider>().All(c=>!c.enabled),"Catch disables all detection colliders");
@@ -357,6 +370,7 @@ public sealed class SmokePlugin : BaseUnityPlugin
             Check(displacement>=200 && displacement<=500,"Capture teleports 200-500 metres during scare");
             Check(ForestCrawler.Capture.SafeGround(Player.m_localPlayer.transform.position,out _),"Player lands on loaded dry terrain with clearance");
             Check(!GameObject.Find("ForestCrawler_Local"),"Encounter completion removes world creature and audio");
+            CheckMusic(false,"Full encounter completion restores game music");
             global::Console.instance.TryRunCommand("crawler_clear");
         })) yield break;
         // Focused transaction regression: no server permit must retain the exact safe origin.

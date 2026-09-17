@@ -1,6 +1,6 @@
 {
   "name": "ForestCrawler",
-  "version_number": "0.2.4",
+  "version_number": "0.2.5",
   "website_url": "https://github.com/NorskIT/ForestCrawler",
   "description": "Rare personal horror encounters with spatial whispers, a stalking creature, fast pursuit and a close-up jumpscare. Requires matching server and client versions.",
   "dependencies": ["denikson-BepInExPack_Valheim-5.4.2350"]

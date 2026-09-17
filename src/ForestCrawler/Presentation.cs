@@ -17,6 +17,8 @@ internal sealed class Presentation
     private string gazeReason = "Not evaluated";
     private EncounterKind kind;
     private ChaseAudio? chaseAudio;
+    private readonly MusicSilence music = new();
+    private static AudioSource? MusicSource => MusicMan.instance ? MusicMan.instance.GetComponentInChildren<AudioSource>(true) : null;
     private Capture? capture;
     private Vector3? landingCandidate;
     private bool captureFinished;
@@ -36,7 +38,7 @@ internal sealed class Presentation
     private int successfulReplans;
     private int corner;
     private float Now => Time.realtimeSinceStartup;
-    internal string Status => $"type={kind}; heartbeat={chaseAudio?.Bpm ?? 0:F0} BPM; chaseReplans={successfulReplans}; groundTarget={(hasGroundTarget ? groundTarget.ToString("F1") : "unavailable")}; lastReachable={lastReachable:F1}; recovery={(recovery.Active ? recovery.Remaining(Now).ToString("F2") : "none")}; routeReason={recovery.Reason}; teleport={capture?.Status ?? "none"}; presentation={(preview ? "preview/" + clip : id == "" ? "none" : phase.ToString())}; authorityLeaseAge={Now - leaseAt:F2}s; gaze={gaze:F2}/{settings.GazeSeconds:F2}s ({gazeReason}); gazeRange={settings.GazeDistance:F0}m; targetDistance={(Player.m_localPlayer && creature ? Vector3.Distance(Player.m_localPlayer.transform.position, position) : 0):F1}m";
+    internal string Status => $"type={kind}; musicSuppressed={music.Active}; heartbeat={chaseAudio?.Bpm ?? 0:F0} BPM; chaseReplans={successfulReplans}; groundTarget={(hasGroundTarget ? groundTarget.ToString("F1") : "unavailable")}; lastReachable={lastReachable:F1}; recovery={(recovery.Active ? recovery.Remaining(Now).ToString("F2") : "none")}; routeReason={recovery.Reason}; teleport={capture?.Status ?? "none"}; presentation={(preview ? "preview/" + clip : id == "" ? "none" : phase.ToString())}; authorityLeaseAge={Now - leaseAt:F2}s; gaze={gaze:F2}/{settings.GazeSeconds:F2}s ({gazeReason}); gazeRange={settings.GazeDistance:F0}m; targetDistance={(Player.m_localPlayer && creature ? Vector3.Distance(Player.m_localPlayer.transform.position, position) : 0):F1}m";
     internal Presentation(Plugin plugin) { this.plugin = plugin; settings = plugin.Settings; }
     internal void Debug(string command)
     {
@@ -88,6 +90,7 @@ internal sealed class Presentation
         if (id != encounter || seq <= sequence) return;
         sequence = seq; phase = state; phaseAt = leaseAt = Now; gaze = 0; discoverySent = false; awaitingFinish = false;
         position = point;
+        if (state == Phase.Lure || state == Phase.Tease) music.Begin(MusicSource);
         if (state == Phase.Relocating) { if (sound) sound!.Stop(); if (creature) creature!.SetActive(false); return; }
         searching = false;
         if (state == Phase.Caught)
@@ -159,6 +162,7 @@ internal sealed class Presentation
     }
     internal void Update()
     {
+        music.Refresh(MusicSource);
         if (id == "" && !preview) return;
         var player = Player.m_localPlayer;
         if (!player || player.IsDead() || !ZNet.instance) { if (id != "") Fail("Target left or died."); else Clear(); return; }
@@ -361,6 +365,7 @@ internal sealed class Presentation
     private void Fail(string reason) { string encounter = id; Clear(); if (encounter != "") plugin.Network.Failure(encounter, reason); plugin.Log(reason); }
     internal void Clear()
     {
+        music.Clear();
         Capture.ClearWarm();
         (capture ?? Capture.Current)?.Dispose(); capture = null; captureFinished = false; landingCandidate = null;
         chaseAudio?.Dispose(); chaseAudio = null;

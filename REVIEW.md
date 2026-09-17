@@ -1,3 +1,7 @@
+# Encounter music suppression - 0.2.5
+
+Inspection of the installed MusicMan and MusicVolume implementations shows that ambient, location, combat and event track selection feeds MusicMan's music AudioSource. Target-client presentation now owns a scoped mute of that source from Lure/Tease activation until Clear. Existing music selection, playback, mixer state and user volume settings continue normally underneath the mute. Repeated acquisition cannot overwrite the original mute state; source replacement and late initialization are supported. Previews never acquire the mute. No shared player state or network protocol changes are required.
+
 # Jump-safe pursuit and unified recovery - 0.2.3
 
 The prior route builder required a grounded endpoint to be within catch distance of the airborne player. Navigation now uses a separately projected ground target; capture still uses the actual player position and unobstructed three-dimensional distance. Projection begins at the feet, so overhead roofs are not selected as destinations.

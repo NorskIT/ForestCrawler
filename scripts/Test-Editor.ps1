@@ -13,6 +13,8 @@ $approach = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/ApproachP
 [IO.File]::WriteAllText((Join-Path $generated 'ApproachPath.cs'), $approach)
 $traversal = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/Traversal.cs')).Replace('namespace ForestCrawler;', 'namespace ForestCrawler {') + [Environment]::NewLine + '}'
 [IO.File]::WriteAllText((Join-Path $generated 'Traversal.cs'), $traversal)
+$music = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/MusicSilence.cs')).Replace('namespace ForestCrawler;', 'namespace ForestCrawler {') + [Environment]::NewLine + '}'
+[IO.File]::WriteAllText((Join-Path $generated 'MusicSilence.cs'), $music)
 $log = Join-Path $root 'artifacts/unity-preview.log'
 $arguments = @('-batchmode','-quit','-projectPath',('"' + (Join-Path $root 'unity') + '"'),'-executeMethod','CrawlerPreview.Validate','-logFile',('"' + $log + '"'))
 $process = Start-Process -FilePath $UnityPath -ArgumentList $arguments -WindowStyle Hidden -PassThru -Wait

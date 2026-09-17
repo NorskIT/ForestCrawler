@@ -93,10 +93,34 @@ public static class CrawlerPreview
         UnityEngine.Object.DestroyImmediate(ramp); UnityEngine.Object.DestroyImmediate(rampMesh);
         Debug.Log("FORESTCRAWLER_APPROACH_OK: moving target, no navmesh, wall rejection, slope, ledge, bounded range, no partial paths");
     }
+    private static void ValidateMusicSilence()
+    {
+        var owner=new GameObject("MusicMuteFixture"); var music=owner.AddComponent<AudioSource>();
+        var effects=owner.AddComponent<AudioSource>(); var replacement=owner.AddComponent<AudioSource>();
+        var silence=new MusicSilence(); music.volume=.37f;
+        silence.Refresh(music);
+        if(music.mute || silence.Active) throw new Exception("Inactive preview changed music");
+        silence.Begin(music); silence.Begin(music);
+        if(!music.mute || effects.mute || music.volume!=.37f) throw new Exception("Encounter did not exclusively mute music");
+        music.volume=.19f; silence.Refresh(music); silence.Clear(); silence.Clear();
+        if(music.mute || music.volume!=.19f) throw new Exception("Cleanup overwrote user volume or retained mute");
+        music.mute=true; silence.Begin(music); silence.Clear();
+        if(!music.mute) throw new Exception("Cleanup unmutes previously muted music");
+        music.mute=false; silence.Begin(music); silence.Refresh(replacement);
+        if(music.mute || !replacement.mute) throw new Exception("Music source replacement was not handled");
+        UnityEngine.Object.DestroyImmediate(replacement); silence.Clear();
+        silence.Begin(null); silence.Refresh(music);
+        if(!music.mute) throw new Exception("Late music source escaped suppression");
+        silence.Clear();
+        if(music.mute) throw new Exception("Late source mute was not restored");
+        UnityEngine.Object.DestroyImmediate(owner);
+        Debug.Log("FORESTCRAWLER_MUSIC_OK: active mute, preview exclusion, volume preservation, prior mute, source replacement/destruction, late source, repeated cleanup");
+    }
     public static void Validate()
     {
         EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         ValidateCloseApproach();
+        ValidateMusicSilence();
         string output = Path.GetFullPath(Path.Combine(Application.dataPath, "../../artifacts/editor-preview")); Directory.CreateDirectory(output);
         var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Crawler/ForestCrawler.prefab");
         var root = UnityEngine.Object.Instantiate(prefab); root.name = "PreviewCreature";

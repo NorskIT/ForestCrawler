@@ -5,6 +5,7 @@ A Valheim horror mod with rare, personal encounters for players exploring alone 
 ## Features
 
 - Invisible audio teases and full encounters in Black Forest, Swamp and Mistlands.
+- Music is silenced for the targeted player during encounters and restored afterwards.
 - Directional whispers, a stalking creature, fast pursuit and distance-driven heartbeat audio.
 - A close-up jumpscare followed by teleportation to a validated dry location, without dealing damage.
 - Server-controlled isolation checks, cooldowns and encounter frequency. Only the selected player sees and hears the encounter.

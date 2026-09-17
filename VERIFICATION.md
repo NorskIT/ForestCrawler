@@ -1,5 +1,13 @@
 # ForestCrawler verification
 
+## 0.2.5 encounter music suppression
+
+Unity tests of the production MusicSilence class pass active suppression, inactive preview behavior, repeated acquisition/cleanup, preservation of changing volume and prior mute state, source replacement/destruction and late initialization. Existing terrain/animation editor checks also pass.
+
+Actual isolated Valheim run `artifacts/runtime-20260917-221205` passes all 72 assertions. The real MusicMan AudioSource remains unmuted for previews, is muted during tease/full lure, relocation, chase recovery and capture, and regains its previous mute state after tease completion, forced route cancellation and full completion. The full event still catches a running/jumping player and completes the scare, dry teleport and cleanup. No human listening or two-client multiplayer test is claimed.
+
+Earlier run `artifacts/runtime-20260917-220908` passed preview, tease suppression/restoration and full-lure checks but stopped at the existing retained-route movement assertion; it is retained as an unsuccessful full run. No pursuit implementation changed in this release. The final DLL and unchanged bundle are checked against the successful fixture before local deployment.
+
 ## 0.2.4 repository and package artwork
 
 Release compilation succeeds without warnings or errors and all 85 core checks pass. This revision adds the supplied artwork as a 256x256 package icon, a matching package manifest, concise README and developer-command reference. Detailed documentation is preserved in DEVELOPMENT.md. The asset bundle and encounter implementation are unchanged from 0.2.3; no new in-game test is claimed for this packaging revision.
