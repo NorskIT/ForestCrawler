@@ -7,12 +7,8 @@ $solver = Get-Content -LiteralPath (Join-Path $root 'src/ForestCrawler/FootSolve
 [IO.File]::WriteAllText((Join-Path $generated 'FootSolver.cs'), $solver.Replace('namespace ForestCrawler;', 'namespace ForestCrawler {') + [Environment]::NewLine + '}')
 $gaze = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/GazeProbe.cs')).Replace('namespace ForestCrawler;', 'namespace ForestCrawler {') + [Environment]::NewLine + '}'
 [IO.File]::WriteAllText((Join-Path $generated 'GazeProbe.cs'), $gaze)
-$approach = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/ApproachPath.cs')).Replace('namespace ForestCrawler;', 'namespace ForestCrawler {') + [Environment]::NewLine + '}'
-[IO.File]::WriteAllText((Join-Path $generated 'ApproachPath.cs'), $approach)
-$traversal = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/Traversal.cs')).Replace('namespace ForestCrawler;', 'namespace ForestCrawler {') + [Environment]::NewLine + '}'
-[IO.File]::WriteAllText((Join-Path $generated 'Traversal.cs'), $traversal)
-$surface = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/SurfacePath.cs')).Replace('namespace ForestCrawler;', 'namespace ForestCrawler {') + [Environment]::NewLine + '}'
-[IO.File]::WriteAllText((Join-Path $generated 'SurfacePath.cs'), $surface)
+$arms = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/ExtendedArms.cs')).Replace('namespace ForestCrawler;', 'namespace ForestCrawler {') + [Environment]::NewLine + '}'
+[IO.File]::WriteAllText((Join-Path $generated 'ExtendedArms.cs'), $arms)
 $music = [IO.File]::ReadAllText((Join-Path $root 'src/ForestCrawler/MusicSilence.cs')).Replace('namespace ForestCrawler;', 'namespace ForestCrawler {') + [Environment]::NewLine + '}'
 [IO.File]::WriteAllText((Join-Path $generated 'MusicSilence.cs'), $music)
 if (!$BlenderPath) { $BlenderPath = Join-Path $root 'tools/blender-4.5.3-windows-x64/blender.exe' }

@@ -8,7 +8,7 @@ namespace ForestCrawler;
 internal sealed class Network : IDisposable
 {
     private const string Rpc = "ForestCrawler.v2";
-    private enum Kind { Hello, Welcome, Debug, Action, Notice, Prepare, Candidate, State, Discovery, Pose, Lease, Stop, Clear, Failure, Finished, Landing, Permit }
+    private enum Kind { Hello, Welcome, Debug, Action, Notice, Prepare, Candidate, State, Discovery, Pose, Lease, Stop, Clear, Failure, Finished, Landing, Permit, Grab, Progress }
     private sealed class Ready { internal float Seen, Voice, Scream, Reveal; internal bool Assets; }
     private sealed class Actor { internal long Peer; internal string Identity = ""; internal Vector3 Position; internal bool Dead; }
     private sealed class Encounter
@@ -17,6 +17,7 @@ internal sealed class Network : IDisposable
         internal EncounterKind Type; internal string Identity = ""; internal Vector3 CatchOrigin, Landing; internal bool Permitted, TeaseWhisper;
         internal long Owner; internal bool Test, SetTime, Activated; internal Phase Phase;
         internal Vector3 Position; internal float Started, PhaseAt, LastPose, LastSeen;
+        internal float LastProgress, ProgressAt, NextGrab; internal Vector3 ProgressPosition, PullPosition; internal float PullAt; internal bool Chasing;
         internal int Sequence; internal float Voice, Scream, Reveal, AttackAt;
     }
     private readonly Plugin plugin;
@@ -76,6 +77,21 @@ internal sealed class Network : IDisposable
             if (e.Permitted && actors.Any(a => a.Peer != e.Owner && !a.Dead && Vector3.Distance(a.Position, e.Landing) < plugin.Settings.Isolation)) reason = "Landing isolation changed.";
             if (reason != "" || Now - e.Started > plugin.Settings.Timeout || Now - e.LastSeen > 2)
             { Stop(reason != "" ? reason : "Encounter timed out or presentation disconnected."); return; }
+            if ((e.Phase == Phase.Charge || e.Phase == Phase.GrabWindup) && Now-e.LastProgress >= plugin.Settings.PursuitTimeout)
+            { Stop("Native pursuit made no reachable progress before its deadline."); return; }
+            if (e.Phase == Phase.GrabWindup && Now-e.PhaseAt > plugin.Settings.GrabExtension + 2)
+            { Stop("Arm contact report timed out."); return; }
+            if (e.Phase == Phase.Pulling)
+            {
+                var pulled = actors.FirstOrDefault(a => a.Peer == e.Owner);
+                if (pulled == null || Vector3.Distance(pulled.Position,e.PullPosition) > plugin.Settings.PullSpeed*(Now-e.PullAt)+2 ||
+                    Now-e.PhaseAt > plugin.Settings.GrabRange/plugin.Settings.PullSpeed+3)
+                { Stop("Pull exceeded authorized movement or duration."); return; }
+                // Unchanged shared-state samples do not advance the observation clock.
+                // A later batched ZDO position must receive its full movement interval.
+                if (Vector3.Distance(pulled.Position,e.PullPosition) > .01f)
+                { e.PullPosition = pulled.Position; e.PullAt = Now; }
+            }
             if (Rules.LureExpired(e.Type, e.Phase, Now - e.PhaseAt)) Change(Phase.Reveal);
             if (e.Phase == Phase.Watching && Now - e.PhaseAt >= e.Voice) Change(Phase.Reveal);
             if (e.Phase == Phase.Caught && Now - e.PhaseAt > 5.5f) { Stop("Capture deadline expired."); return; }
@@ -144,6 +160,8 @@ internal sealed class Network : IDisposable
     internal void Pose(string id, int sequence, Vector3 position) => Send(ServerId, Kind.Pose, p => { p.Write(id); p.Write(sequence); p.Write(position); });
     internal void Failure(string id, string reason) => Send(ServerId, Kind.Failure, p => { p.Write(id); p.Write(reason); });
     internal void Finished(string id, int sequence) => Send(ServerId, Kind.Finished, p => { p.Write(id); p.Write(sequence); });
+    internal void Grab(string id, int seq, int action) => Send(ServerId, Kind.Grab, p => { p.Write(id); p.Write(seq); p.Write(action); });
+    internal void Progress(string id, int seq) => Send(ServerId, Kind.Progress, p => { p.Write(id); p.Write(seq); });
     internal void Landing(string id, int seq, Vector3 point) => Send(ServerId, Kind.Landing, p => { p.Write(id); p.Write(seq); p.Write(point); });
     private void Send(long target, Kind kind, Action<ZPackage>? write = null)
     {
@@ -195,10 +213,37 @@ internal sealed class Network : IDisposable
                         Send(sender, Kind.Permit, q => { q.Write(landing.Id); q.Write(landing.Sequence); q.Write(point); });
                     }
                     break;
+                case Kind.Progress when Server:
+                    if (Match(sender,p,out var progress) && progress.Phase == Phase.Charge && Now-progress.ProgressAt >= .3f)
+                    {
+                        var target = Actors(out bool valid).FirstOrDefault(a => a.Peer == sender);
+                        if (valid && target != null && Vector3.Dot(progress.Position-progress.ProgressPosition,(target.Position-progress.ProgressPosition).normalized) >= .1f)
+                            progress.LastProgress = Now;
+                        progress.ProgressPosition = progress.Position; progress.ProgressAt = Now;
+                    }
+                    break;
+                case Kind.Grab when Server:
+                    if (Match(sender,p,out var grab))
+                    {
+                        int action = p.ReadInt(); var roster = Actors(out bool valid); var target = roster.FirstOrDefault(a => a.Peer == sender);
+                        if (!valid || target == null || Eligibility(sender,roster,valid,grab.Test,false,false,grab.Position) != "") break;
+                        float distance = Vector3.Distance(target.Position,grab.Position);
+                        if (action == 0 && grab.Phase == Phase.Charge)
+                        {
+                            if (Rules.CanStartGrab(grab.Phase, Now-grab.LastProgress, grab.NextGrab-Now, distance, plugin.Settings.GrabDelay, plugin.Settings.PursuitTimeout, plugin.Settings.GrabRange + .5f))
+                                Change(Phase.GrabWindup);
+                            else Change(Phase.Charge);
+                        }
+                        else if (action == 1 && grab.Phase == Phase.GrabWindup && Now-grab.PhaseAt >= plugin.Settings.GrabExtension && distance <= plugin.Settings.GrabRange + .5f)
+                        { grab.PullPosition = target.Position; grab.PullAt = Now; Change(Phase.Pulling); }
+                        else if (action == 2 && (grab.Phase == Phase.GrabWindup || grab.Phase == Phase.Pulling))
+                        { grab.NextGrab = Now+3; Change(Phase.Charge); }
+                    }
+                    break;
                 case Kind.Finished when Server:
                     if (Match(sender, p, out var end))
                     {
-                        if (end.Phase == Phase.Charge)
+                        if (end.Phase == Phase.Charge || end.Phase == Phase.Pulling)
                         {
                             var roster = Actors(out bool valid); var target = roster.FirstOrDefault(a => a.Peer == sender);
                             if (valid && target != null && Vector3.Distance(target.Position, end.Position) <= 3.5f)
@@ -333,6 +378,8 @@ internal sealed class Network : IDisposable
     {
         var e = active!; e.Phase = phase; e.PhaseAt = Now; e.Sequence++;
         if (phase == Phase.Reveal) e.AttackAt = Now;
+        if (phase == Phase.Charge && !e.Chasing)
+        { e.Chasing = true; e.LastProgress = e.ProgressAt = Now; e.ProgressPosition = e.Position; }
         Send(e.Owner, Kind.State, p => { p.Write(e.Id); p.Write(e.Sequence); p.Write((int)e.Phase); p.Write(e.Position); });
     }
     private void Stop(string reason)

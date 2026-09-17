@@ -23,100 +23,6 @@ public static class CrawlerPreview
         File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,"../../artifacts/audio-analysis.txt")),report.ToString());
         Debug.Log("FORESTCRAWLER_AUDIO_ANALYZED");
     }
-    private static void ValidateCloseApproach()
-    {
-        var floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        floor.transform.position = Vector3.down * .5f; floor.transform.localScale = new Vector3(80, 1, 80);
-        bool Accept(RaycastHit hit) => true;
-        bool Ground(Vector3 point, out Vector3 ground) => Traversal.Support(point,1,Accept,out ground,out var normal) && Traversal.ClearBody(ground,normal,1);
-        bool Segment(Vector3 a, Vector3 b) => Traversal.Segment(a,b,1,Accept);
-        var route = new System.Collections.Generic.List<Vector3>(); Physics.SyncTransforms();
-        var from = new Vector3(0,0,7); var target = Vector3.up * .1f;
-        if (!ApproachPath.TryBuild(from,target,2.5f,Ground,Segment,route) || route.Count<2 || Vector3.Distance(route[route.Count-1],target)>2.5f)
-            throw new Exception("Close approach requires no navigation tiles and ends inside catch range");
-        if (!ApproachPath.TryBuild(new Vector3(0,0,30),target,2.5f,Ground,Segment,route,90))
-            throw new Exception("Clear long chase unnecessarily depends on navmesh");
-        ApproachPath.TryBuild(from,target,2.5f,Ground,Segment,route);
-        var oldEnd=route[route.Count-1]; target+=Vector3.right*2;
-        if (!ApproachPath.TryBuild(from,target,2.5f,Ground,Segment,route) || Vector3.Distance(oldEnd,route[route.Count-1])<.5f)
-            throw new Exception("Approach failed to track moving target");
-        var wall=GameObject.CreatePrimitive(PrimitiveType.Cube); wall.transform.position=new Vector3(0,1.5f,4); wall.transform.localScale=new Vector3(10,3,.2f); Physics.SyncTransforms();
-        if (ApproachPath.TryBuild(from,Vector3.up*.1f,2.5f,Ground,Segment,route) || route.Count!=0)
-            throw new Exception("Close approach crossed a wall or retained a partial path");
-        UnityEngine.Object.DestroyImmediate(wall); floor.transform.rotation=Quaternion.Euler(-15,0,0); Physics.SyncTransforms();
-        Ground(new Vector3(0,0,6),out var slopeFrom); Ground(Vector3.zero,out var slopeTarget);
-        if(!ApproachPath.TryBuild(slopeFrom,slopeTarget+Vector3.up*.1f,2.5f,Ground,Segment,route)) throw new Exception("Close approach failed on a traversable slope");
-        floor.transform.rotation=Quaternion.identity; Physics.SyncTransforms();
-        if(ApproachPath.TryBuild(from,new Vector3(0,3,0),2.5f,Ground,Segment,route)) throw new Exception("Approach caught a player on an unreachable ledge");
-        if(ApproachPath.TryBuild(new Vector3(0,0,20),Vector3.zero,2.5f,Ground,Segment,route)) throw new Exception("Close approach exceeded bounded distance");
-        foreach(float angle in new[]{30f,45f,60f,85f})
-        {
-            floor.transform.rotation=Quaternion.Euler(-angle,0,0); Physics.SyncTransforms();
-            var normal=floor.transform.up;
-            var center=floor.transform.position+normal*.5f;
-            var tangent=floor.transform.forward;
-            var slopeStart=center-tangent*2; var slopeEnd=center+tangent*2;
-            if(!Ground(slopeStart,out var groundedStart) || !Ground(slopeEnd,out var groundedEnd) || !Segment(groundedStart,groundedEnd))
-                throw new Exception("Production traversal rejected slope "+angle);
-            if(!ApproachPath.TryBuild(groundedStart,groundedEnd,2.5f,Ground,Segment,route))
-                throw new Exception("Production direct route rejected slope "+angle);
-        }
-        floor.transform.rotation=Quaternion.identity; Physics.SyncTransforms();
-        if(!Traversal.Support(new Vector3(0,2,0),1,Accept,out var jumpGround,out _,true) || jumpGround.y>.01f ||
-            !ApproachPath.TryBuild(from,jumpGround,2.5f,Ground,Segment,route)) throw new Exception("Airborne target projection loses ground route");
-        if(!Traversal.Support(new Vector3(2,2,0),1,Accept,out var landedGround,out _,true) ||
-            !ApproachPath.TryBuild(from,landedGround,2.5f,Ground,Segment,route)) throw new Exception("Jump landing at new position loses route");
-        // A persistent obstacle blocks actual physics, and removing it restores the same query.
-        wall=GameObject.CreatePrimitive(PrimitiveType.Cube); wall.transform.position=new Vector3(0,1.5f,4); wall.transform.localScale=new Vector3(10,3,.2f); Physics.SyncTransforms();
-        if(Segment(new Vector3(0,0,3),new Vector3(0,0,5))) throw new Exception("Production traversal penetrated temporary obstruction");
-        UnityEngine.Object.DestroyImmediate(wall); Physics.SyncTransforms();
-        if(!Segment(new Vector3(0,0,3),new Vector3(0,0,5))) throw new Exception("Production traversal failed to recover after obstruction removal");
-        floor.transform.localScale=new Vector3(80,1,4); Physics.SyncTransforms();
-        if(Segment(Vector3.zero,new Vector3(0,0,4))) throw new Exception("Production traversal crossed unsupported cliff");
-        UnityEngine.Object.DestroyImmediate(floor); Physics.SyncTransforms();
-        var ramp=new GameObject("ConnectedSlopeFixture");
-        var vertices=new System.Collections.Generic.List<Vector3>();
-        var triangles=new System.Collections.Generic.List<int>();
-        var centers=new System.Collections.Generic.List<Vector3> { Vector3.zero };
-        foreach(float angle in new[]{0f,15f,30f,45f,60f,75f,85f})
-            centers.Add(centers[centers.Count-1]+new Vector3(0,Mathf.Sin(angle*Mathf.Deg2Rad),Mathf.Cos(angle*Mathf.Deg2Rad))*4);
-        foreach(var center in centers) { vertices.Add(center+Vector3.left*5); vertices.Add(center+Vector3.right*5); }
-        for(int i=0;i<centers.Count-1;i++) { int v=i*2; triangles.AddRange(new[]{v,v+2,v+1,v+1,v+2,v+3}); }
-        var rampMesh=new Mesh(); rampMesh.SetVertices(vertices); rampMesh.SetTriangles(triangles,0); rampMesh.RecalculateNormals();
-        ramp.AddComponent<MeshCollider>().sharedMesh=rampMesh; Physics.SyncTransforms();
-        for(int i=1;i<centers.Count-1;i++)
-        {
-            var before=Vector3.MoveTowards(centers[i],centers[i-1],.2f);
-            var after=Vector3.MoveTowards(centers[i],centers[i+1],.2f);
-            if(!Segment(before,after)) throw new Exception("Connected slope transition rejected at index "+i);
-        }
-        UnityEngine.Object.DestroyImmediate(ramp); UnityEngine.Object.DestroyImmediate(rampMesh);
-        Debug.Log("FORESTCRAWLER_APPROACH_OK: moving target, no navmesh, wall rejection, slope, ledge, bounded range, no partial paths");
-    }
-    private static void ValidateRockRoute()
-    {
-        var floor=GameObject.CreatePrimitive(PrimitiveType.Cube); floor.transform.position=Vector3.down*.5f; floor.transform.localScale=new Vector3(80,1,80);
-        var rock=new GameObject("RockWithSteepFrontAndAccessibleBack");
-        var mesh=new Mesh();
-        mesh.vertices=new[]{new Vector3(-3,0,0),new Vector3(3,0,0),new Vector3(-3,3,0),new Vector3(3,3,0),new Vector3(-3,0,6),new Vector3(3,0,6)};
-        mesh.triangles=new[]{0,2,1,1,2,3,2,4,3,3,4,5,0,4,2,1,3,5,0,1,4,1,5,4}; mesh.RecalculateNormals();
-        rock.AddComponent<MeshCollider>().sharedMesh=mesh; Physics.SyncTransforms();
-        bool Accept(RaycastHit hit)=>true;
-        bool Ground(Vector3 point,out Vector3 ground)=>Traversal.Support(point,1,Accept,out ground,out var normal) && Traversal.ClearBody(ground,normal,1);
-        bool Segment(Vector3 a,Vector3 b)=>Traversal.Segment(a,b,1,Accept);
-        var from=new Vector3(0,0,-5); var target=new Vector3(0,2.5f,1);
-        bool Goal(Vector3 point)=>!Physics.Linecast(point+Vector3.up*1.2f,target+Vector3.up*1.2f,1);
-        var route=new System.Collections.Generic.List<Vector3>();
-        if(ApproachPath.TryBuild(from,target,1.5f,Ground,Segment,route)) throw new Exception("Rock fixture must obstruct the direct approach");
-        var timer=System.Diagnostics.Stopwatch.StartNew();
-        if(!SurfacePath.TryBuild(from,target,1.5f,Ground,Segment,Goal,route)) throw new Exception("Local surface search did not route around the rock and climb its accessible back: "+Traversal.LastFailure);
-        if(!route.Any(p=>p.z>3) || Vector3.Distance(route[route.Count-1],target)>1.5f) throw new Exception("Rock route did not reach the elevated target through the accessible side");
-        for(int i=1;i<route.Count;i++) if(!Segment(route[i-1],route[i])) throw new Exception("Rock route contains an invalid edge");
-        Debug.Log("FORESTCRAWLER_ROCK_OK: waypoints="+route.Count+", searchMs="+timer.ElapsedMilliseconds);
-        var wall=GameObject.CreatePrimitive(PrimitiveType.Cube); wall.transform.position=new Vector3(0,2,-1); wall.transform.localScale=new Vector3(40,4,.5f); Physics.SyncTransforms();
-        if(SurfacePath.TryBuild(from,target,1.5f,Ground,Segment,Goal,route)) throw new Exception("Surface search crossed a blocking wall");
-        UnityEngine.Object.DestroyImmediate(wall); UnityEngine.Object.DestroyImmediate(rock); UnityEngine.Object.DestroyImmediate(mesh); UnityEngine.Object.DestroyImmediate(floor);
-    }
     private static void ValidateMusicSilence()
     {
         var owner=new GameObject("MusicMuteFixture"); var music=owner.AddComponent<AudioSource>();
@@ -140,15 +46,38 @@ public static class CrawlerPreview
         UnityEngine.Object.DestroyImmediate(owner);
         Debug.Log("FORESTCRAWLER_MUSIC_OK: active mute, preview exclusion, volume preservation, prior mute, source replacement/destruction, late source, repeated cleanup");
     }
+    private static void ValidateArms(GameObject model)
+    {
+        var rig=new ExtendedArms(model);
+        var transforms=model.GetComponentsInChildren<Transform>();
+        var saved=transforms.Select(t=>(t.localPosition,t.localRotation,t.localScale)).ToArray();
+        foreach(float distance in new[]{3f,12f,30f})
+        {
+            var target=model.transform.position+Vector3.forward*distance+Vector3.up*6;
+            rig.Pose(target,1);
+            foreach(string side in new[]{"L","R"})
+                if(Vector3.Distance(transforms.First(t=>t.name=="Hand"+side).position,target)>.3f) throw new Exception("Extended hand misses target");
+            var skin=model.GetComponentsInChildren<SkinnedMeshRenderer>().OrderByDescending(r=>r.sharedMesh.vertexCount).First();
+
+            var baked=new Mesh(); skin.BakeMesh(baked, true);
+            var points=baked.vertices.Select(v=>skin.localToWorldMatrix.MultiplyPoint3x4(v)).ToArray();
+            if(points.Any(v=>float.IsNaN(v.x)||float.IsInfinity(v.x)) || points.Min(v=>Vector3.Distance(v,target))>1.2f)
+                throw new Exception("Rendered skin does not reach arm target at "+distance+"m; nearest="+points.Min(v=>Vector3.Distance(v,target)));
+            UnityEngine.Object.DestroyImmediate(baked); rig.Restore();
+            for(int i=0;i<transforms.Length;i++)
+                if(transforms[i].localPosition!=saved[i].Item1 || transforms[i].localRotation!=saved[i].Item2 || transforms[i].localScale!=saved[i].Item3)
+                    throw new Exception("Arm restoration altered authored rig");
+        }
+        rig.Dispose(); Debug.Log("FORESTCRAWLER_ARMS_OK: skin reach at 3/12/30m and exact authored pose restoration");
+    }
     public static void Validate()
     {
         EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-        ValidateCloseApproach();
         ValidateMusicSilence();
-        ValidateRockRoute();
         string output = Path.GetFullPath(Path.Combine(Application.dataPath, "../../artifacts/editor-preview")); Directory.CreateDirectory(output);
         var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Crawler/ForestCrawler.prefab");
         var root = UnityEngine.Object.Instantiate(prefab); root.name = "PreviewCreature";
+        ValidateArms(root);
         var sensor=new GameObject("Probe"); sensor.layer=2; sensor.transform.SetParent(root.transform,false);
         var collider=sensor.AddComponent<CapsuleCollider>(); collider.isTrigger=true; collider.center=Vector3.up*1.25f; collider.height=2.5f; collider.radius=.5f;
         Physics.SyncTransforms();
@@ -230,12 +159,18 @@ public static class CrawlerPreview
         if(Vector3.Distance(pausedHips,Find("Hips").position)>.000001f || Vector3.Distance(pausedFoot,Find("FootL").position)>.000001f) throw new Exception("Paused IK accumulated a pose offset");
         ground.GetComponent<Renderer>().enabled=false;
         camera.transform.position=new Vector3(0,1.25f,4); camera.transform.LookAt(new Vector3(0,1.25f,0)); camera.fieldOfView=40; camera.backgroundColor=Color.black;
-        foreach(string name in new[]{"idle","scream","charge","opacity"})
+        foreach(string name in new[]{"idle","scream","charge","opacity","arms"})
         {
             camera.backgroundColor=name=="opacity"?new Color(1,.2f,1):Color.black;
-            var clip=clips.First(c=>c.name==(name=="opacity"?"idle":name)); feet.Release();
+            var clip=clips.First(c=>c.name==(name=="opacity" || name=="arms" ? "idle":name)); feet.Release();
             clip.SampleAnimation(model, name=="scream"?.7f:name=="charge"?.1f:0); Physics.SyncTransforms();
             feet.Solve(name=="charge",name=="charge"?.1f/.7f:0,1f/60f);
+            ExtendedArms armPreview=null;
+            if(name=="arms")
+            {
+                armPreview=new ExtendedArms(root); armPreview.Pose(new Vector3(0,6,12),1);
+                camera.transform.position=new Vector3(13,8,6); camera.transform.LookAt(new Vector3(0,3,6)); camera.fieldOfView=65;
+            }
             details.AppendLine(name+" head="+Find("Head").localRotation+" calf="+Find("CalfL").localRotation+" foot="+Find("FootL").position);
             // Explicitly bake the evaluated pose for deterministic editor camera capture.
             var bakedObjects=new System.Collections.Generic.List<GameObject>();
@@ -252,6 +187,7 @@ public static class CrawlerPreview
             var previous=RenderTexture.active; RenderTexture.active=target; var image=new Texture2D(900,900,TextureFormat.RGB24,false);
             image.ReadPixels(new Rect(0,0,900,900),0,0); image.Apply(); File.WriteAllBytes(Path.Combine(output,name+".png"),image.EncodeToPNG());
             RenderTexture.active=previous; camera.targetTexture=null; target.Release(); UnityEngine.Object.DestroyImmediate(target); UnityEngine.Object.DestroyImmediate(image);
+            armPreview?.Dispose();
             foreach(var baked in bakedObjects) { UnityEngine.Object.DestroyImmediate(baked.GetComponent<MeshFilter>().sharedMesh); UnityEngine.Object.DestroyImmediate(baked); }
         }
         File.WriteAllText(Path.Combine(output,"validation.json"),"{\"engine\":\""+Application.unityVersion+"\",\"maxStanceDriftMetres\":"+maxDrift.ToString("R",System.Globalization.CultureInfo.InvariantCulture)+",\"slopesDegrees\":[0,15,30,45,60,85],\"gameTested\":false}");

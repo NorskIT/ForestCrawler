@@ -1,3 +1,13 @@
+# 0.2.7 pursuit replacement review
+
+The previous custom route sampler, corridor repair, surface A*, virtual body sweeps and five-second recovery timer have been removed. They repeatedly failed on real terrain despite synthetic fixture passes. Production now runs the installed native ground-enemy AI and Character physics; the only native movement adapter concerns presentation, speed, selected-target isolation and disabled combat.
+
+Detached native state must never enter ZDOMan sectors, object tables or ZNetScene instances. Revision/sector hooks are scoped to a private set of driver ZDOs; callback dispatch stays local. Registry absence is asserted during actual game tests. This does not substitute for a two-client test.
+
+Arm capture uses separate server-authorized phases, real loaded-scene visibility and swept player-body movement. Cancellation disposes movement ownership before restoring music/audio and destroys the native driver. Existing capture cleanup remains responsible for its own snapshot after handoff.
+
+Historical review follows; descriptions of the old custom motor below no longer describe current production.
+
 # Exact music source and rock approaches - 0.2.6
 
 The 0.2.5 hierarchy lookup selected `ocean_ambient_loop`, not MusicMan's private `m_musicSource`. Its runtime checks repeated that lookup and therefore did not prove music suppression. Presentation now reads the actual field through a cached Harmony field accessor. Regression checks independently inspect the field, play a real track at nonzero source volume, insert an unrelated decoy source, change runtime music gain during suppression and verify that saved preferences remain unchanged. Status reports the acquired source, mute flag, playing state and volume.

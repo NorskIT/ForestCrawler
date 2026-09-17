@@ -45,6 +45,7 @@ internal sealed class ChaseAudio : IDisposable
     }
     public void Dispose()
     {
+        if (!root) return; // Scene teardown may destroy audio before plugin cleanup.
         foreach (var source in root.GetComponentsInChildren<AudioSource>()) source.Stop();
         UnityEngine.Object.Destroy(root);
     }

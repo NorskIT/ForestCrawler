@@ -64,11 +64,6 @@ try
     Check("Atomic replacement preserves other player deadlines", Near(updated.Remaining("Steam_1", 1500), 2200) && Near(updated.Remaining("Steam_2", 1500), 2700));
 }
 finally { Directory.Delete(directory, true); }
-Check("Thirty-degree slope remains traversable", Rules.WalkableHeightChange(1, .5774));
-Check("Small terrain step remains traversable", Rules.WalkableHeightChange(0, .15));
-Check("Cliff ascent is rejected", !Rules.WalkableHeightChange(1, 2));
-Check("Cliff descent is rejected", !Rules.WalkableHeightChange(.1, -.6));
-Check("Invalid terrain delta is rejected", !Rules.WalkableHeightChange(double.NaN, 0));
 Check("First natural draw always selects tease", Rules.SelectKind(false, .99999) == EncounterKind.Tease);
 Check("Experienced player tease half", Rules.SelectKind(true, .49999) == EncounterKind.Tease);
 Check("Experienced player full half", Rules.SelectKind(true, .5) == EncounterKind.Full);
@@ -90,14 +85,12 @@ Check("Late update still expires full lure", Rules.LureExpired(EncounterKind.Ful
 Check("Tease cannot auto-charge", !Rules.LureExpired(EncounterKind.Tease, Phase.Lure, 120));
 Check("Discovery cancels lure deadline", !Rules.LureExpired(EncounterKind.Full, Phase.Stare, 120));
 Check("Relocated encounter cannot repeat timeout transition", !Rules.LureExpired(EncounterKind.Full, Phase.Watching, 120));
-var recovery = new ChaseRecovery();
-Check("Recovery starts once", recovery.Fail(10, "route unavailable"));
-Check("Recovery preserves first failure across movement/query failures", !recovery.Fail(14, "blocked movement"));
-Check("Recovery lasts the full five seconds", !recovery.Expired(14.999));
-Check("Recovery expires at exactly five seconds", recovery.Expired(15));
-Check("Repeated unusable queries cannot extend recovery", !recovery.Fail(15, "same blocked path") && recovery.Expired(15));
-recovery.Reset();
-Check("Validated movement clears recovery", !recovery.Active && !recovery.Expired(100));
-recovery.Fail(100, "second obstruction");
-Check("New obstruction receives a new deadline", !recovery.Expired(104.999) && recovery.Expired(105));
+Check("Grab waits thirty seconds", !Rules.CanStartGrab(Phase.Charge,29.999,0,20,30,60,30));
+Check("Grab starts at thirty seconds and includes range boundary", Rules.CanStartGrab(Phase.Charge,30,0,30,30,60,30));
+Check("Grab rejects targets beyond reach", !Rules.CanStartGrab(Phase.Charge,30,0,30.01,30,60,30));
+Check("Grab cannot restart windup", !Rules.CanStartGrab(Phase.GrabWindup,35,0,20,30,60,30));
+Check("Grab cannot restart pulling", !Rules.CanStartGrab(Phase.Pulling,35,0,20,30,60,30));
+Check("Blocked pull retry waits three seconds", !Rules.CanStartGrab(Phase.Charge,35,.01,20,30,60,30));
+Check("Unsuccessful pursuit expires at sixty seconds", !Rules.CanStartGrab(Phase.Charge,60,0,20,30,60,30));
+Check("Grab rejects non-finite target distance", !Rules.CanStartGrab(Phase.Charge,35,0,double.NaN,30,60,30));
 Console.WriteLine($"{passed} core checks passed. These are not Valheim runtime tests.");

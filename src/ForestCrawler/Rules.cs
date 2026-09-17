@@ -2,7 +2,7 @@ using System;
 
 namespace ForestCrawler;
 
-internal enum Phase { Preparing, Lure, Relocating, Watching, Reveal, Charge, Tail, Stare, Tease, Caught }
+internal enum Phase { Preparing, Lure, Relocating, Watching, Reveal, Charge, Tail, Stare, Tease, Caught, GrabWindup, Pulling }
 internal enum EncounterKind { Full, Tease }
 
 internal sealed class ScheduleClock
@@ -19,7 +19,11 @@ internal sealed class ScheduleClock
 
 internal static class Rules
 {
-    internal const int Protocol = 2;
+    internal const int Protocol = 3;
+    internal static bool CanStartGrab(Phase phase, double stalled, double retryRemaining, double distance, double delay, double timeout, double range) =>
+        phase == Phase.Charge && Finite(stalled) && Finite(distance) && stalled >= delay && stalled < timeout &&
+        retryRemaining <= 0 && distance >= 0 && distance <= range;
+
     internal const float LureDeadlineSeconds = 120;
     internal static bool LureExpired(EncounterKind kind, Phase phase, double elapsed) =>
         kind == EncounterKind.Full && phase == Phase.Lure && elapsed >= LureDeadlineSeconds;
@@ -40,8 +44,6 @@ internal static class Rules
         players < 1 ? 0 : 1 - Math.Exp(-Math.Max(0, ratePerHour) * Math.Max(0, elapsedSeconds) / (3600 * players));
     internal static bool CanDiscover(Phase phase, double elapsed, double lineLength) =>
         phase == Phase.Lure;
-    internal static bool WalkableHeightChange(double horizontal, double vertical) =>
-        Finite(horizontal) && Finite(vertical) && horizontal >= 0 && Math.Abs(vertical) <= horizontal * .7 + .2;
     // Minimum distance of a relative movement segment to the origin. Handles movement of both actors.
     internal static double SweptDistanceSquared(double ax, double ay, double az, double bx, double by, double bz)
     {

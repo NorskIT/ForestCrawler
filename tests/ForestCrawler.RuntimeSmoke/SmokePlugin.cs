@@ -20,12 +20,13 @@ public sealed class SmokePlugin : BaseUnityPlugin
     private float deadline;
     private Vector3 chargeStart;
     private float aimUntil;
+    private string? lateCapture;
+    private bool roofFixture;
+    private float heldPullSyncUntil;
+    private int heldPullSyncFrames;
     private bool fleeDuringCharge;
     private float nextJump;
     private int jumps, airborneFrames;
-    private static bool forceRouteFailure, forceMovementFailure;
-    private static bool BlockRoute(ref bool __result) { if(!forceRouteFailure) return true; __result=false; return false; }
-    private static bool BlockMovement(ref bool __result) { if(!forceMovementFailure) return true; __result=false; return false; }
     private Vector3 fleeOrigin, fleeDirection;
     private static SmokePlugin? running;
     private Plugin Mod => Plugin.Instance;
@@ -67,7 +68,6 @@ public sealed class SmokePlugin : BaseUnityPlugin
                 string id="music-fixture-"+kind; int seq=0;
                 Mod.View.Prepare(id,seq,true,false,Player.m_localPlayer.transform.position,Mod.Settings,kind);
                 var phases=kind==EncounterKind.Tease ? new[]{Phase.Tease} : new[]{Phase.Lure,Phase.Stare,Phase.Relocating,Phase.Watching,Phase.Reveal,Phase.Charge,Phase.Caught};
-                forceRouteFailure=forceMovementFailure=true;
                 foreach(var phase in phases)
                 {
                     if(!Try(()=>Mod.View.State(id,++seq,phase,Player.m_localPlayer.transform.position+Vector3.forward*12))) yield break;
@@ -91,62 +91,13 @@ public sealed class SmokePlugin : BaseUnityPlugin
             if(!Try(()=>
             {
                 Check(PlatformPrefs.GetFloat("MusicVolume",1)==savedMusicPreference,"Encounter never changes saved MusicVolume preference");
-                Logger.LogInfo("Focused music regression passed; continuing to elevated rock target fixture.");
+                Logger.LogInfo("Focused music regression passed using the exact playing MusicMan source.");
             })) yield break;
         }
         finally
         {
-            forceRouteFailure=forceMovementFailure=false;
             Mod.View.Clear(); MusicMan.m_masterMusicVolume=previousMaster;
             if(decoy) UnityEngine.Object.Destroy(decoy);
-        }
-        yield return RockRegression();
-        if(!failed) File.WriteAllText(Path.Combine(output,"verified.txt"),"Focused actual-Valheim regression passed: actual MusicMan source with nonzero track volume, independent source inspection, decoy and injected presentation phases; production charge motor climbs an isolated rock fixture to an elevated player. Not a natural full encounter or human listening test.");
-        Application.Quit();
-    }
-    private IEnumerator RockRegression()
-    {
-        var origin=Player.m_localPlayer.transform.position;
-        var center=origin+Vector3.up*100;
-        var floor=GameObject.CreatePrimitive(PrimitiveType.Cube); floor.name="SmokeRockFloor"; floor.transform.position=center+Vector3.down*.5f; floor.transform.localScale=new Vector3(80,1,80);
-        var rock=new GameObject("SmokeClimbableRock"); rock.transform.position=center;
-        var mesh=new Mesh(); mesh.vertices=new[]{new Vector3(-3,0,0),new Vector3(3,0,0),new Vector3(-3,3,0),new Vector3(3,3,0),new Vector3(-3,0,6),new Vector3(3,0,6)};
-        mesh.triangles=new[]{0,2,1,1,2,3,2,4,3,3,4,5,0,4,2,1,3,5,0,1,4,1,5,4}; mesh.RecalculateNormals();
-        rock.AddComponent<MeshCollider>().sharedMesh=mesh; Physics.SyncTransforms();
-        try
-        {
-            Player.m_localPlayer.TeleportTo(center+new Vector3(0,2.7f,1),Quaternion.identity,true);
-            yield return new WaitForSecondsRealtime(5);
-            string id="rock-fixture"; int seq=1;
-            if(!Try(()=>
-            {
-                Check(Player.m_localPlayer.transform.position.y>center.y+2,"Rock fixture player stands on elevated collider");
-                Mod.View.Prepare(id,0,true,false,center+new Vector3(0,0,-5),Mod.Settings,EncounterKind.Full);
-                Mod.View.State(id,seq,Phase.Lure,center+new Vector3(0,0,-5));
-                Mod.View.State(id,++seq,Phase.Charge,center+new Vector3(0,0,-5));
-            })) yield break;
-            float until=Time.realtimeSinceStartup+15, maximumHeight=0, maximumZ=0;
-            bool finished=false;
-            while(Time.realtimeSinceStartup<until)
-            {
-                Mod.View.Lease(id,seq);
-                var creature=GameObject.Find("ForestCrawler_Local");
-                if(creature) { maximumHeight=Mathf.Max(maximumHeight,creature.transform.position.y-center.y); maximumZ=Mathf.Max(maximumZ,creature.transform.position.z-center.z); }
-                finished=(bool)AccessTools.Field(typeof(Presentation),"awaitingFinish").GetValue(Mod.View);
-                if(finished) break;
-                yield return null;
-            }
-            if(!Try(()=>
-            {
-                Check(finished,"Production charge reaches player on rock: "+Mod.View.Status+"; route="+ForestCrawler.World.LastRouteFailure);
-                Check(maximumHeight>1 && maximumZ>3,"Charge physically goes around steep face and climbs accessible rock side");
-                CheckMusic(true,"Rock pursuit retains actual music suppression");
-            })) yield break;
-        }
-        finally
-        {
-            Mod.View.Clear(); UnityEngine.Object.Destroy(rock); UnityEngine.Object.Destroy(mesh); UnityEngine.Object.Destroy(floor);
-            Player.m_localPlayer.TeleportTo(origin,Quaternion.identity,true);
         }
     }
     private void CheckMusic(bool muted, string message)
@@ -165,11 +116,20 @@ public sealed class SmokePlugin : BaseUnityPlugin
         var isolation=new Harmony("norskit.ForestCrawler.smoke.cloud");
         isolation.Patch(AccessTools.PropertyGetter(typeof(FileHelpers),"CloudStorageSupportedAndEnabled"),prefix:new HarmonyMethod(typeof(SmokePlugin),nameof(NoCloud)));
         isolation.Patch(AccessTools.Method(typeof(Utils),"GetSaveDataPath"),prefix:new HarmonyMethod(typeof(SmokePlugin),nameof(IsolatedSavePath)));
+        isolation.Patch(AccessTools.Method(typeof(ZSyncTransform),"OwnerSync"),prefix:new HarmonyMethod(typeof(SmokePlugin),nameof(DelayPullSync)));
+        isolation.Patch(AccessTools.Method(typeof(Presentation),"LateUpdate"),postfix:new HarmonyMethod(typeof(SmokePlugin),nameof(CaptureAfterPose)));
         isolation.Patch(AccessTools.Method(typeof(Player),"SetControls"),prefix:new HarmonyMethod(typeof(SmokePlugin),nameof(FleeInput)));
-        isolation.Patch(AccessTools.Method(typeof(ForestCrawler.World),"ChargeRoute"),prefix:new HarmonyMethod(typeof(SmokePlugin),nameof(BlockRoute)));
-        isolation.Patch(AccessTools.Method(typeof(ForestCrawler.World),"ChaseSegment"),prefix:new HarmonyMethod(typeof(SmokePlugin),nameof(BlockMovement)));
+
+
         Utils.SetSaveDataPath(Path.Combine(output,"saves"));
-        deadline=Time.realtimeSinceStartup+360;
+        deadline=Time.realtimeSinceStartup+600;
+    }
+    // Fixture input selection only; this is not part of the shipped creature motor.
+    private static bool FixturePlayerStep(Vector3 from, Vector3 to)
+    {
+        var delta=to-from;
+        if(Mathf.Abs(delta.y)>Vector3.ProjectOnPlane(delta,Vector3.up).magnitude*.7f+.2f) return false;
+        return !Physics.CapsuleCast(from+Vector3.up*.6f,from+Vector3.up*2,.48f,delta.normalized,delta.magnitude,ForestCrawler.World.Solids,QueryTriggerInteraction.Ignore);
     }
     private void Update()
     {
@@ -188,7 +148,7 @@ public sealed class SmokePlugin : BaseUnityPlugin
                 foreach (float angle in new[] {0f,30f,-30f,60f,-60f,90f,-90f})
                 {
                     var direction=Quaternion.Euler(0,angle,0)*away;
-                    if (!ForestCrawler.World.Ground(player.transform.position+direction*1.2f,out var ground) || !ForestCrawler.World.SegmentClear(player.transform.position,ground)) continue;
+                    if (!ForestCrawler.World.Ground(player.transform.position+direction*1.2f,out var ground) || !FixturePlayerStep(player.transform.position,ground)) continue;
                     fleeDirection=direction;
                     player.SetLookDir(direction);
                     player.SetControls(Vector3.forward,false,false,false,false,false,false,false,false,true,false);
@@ -208,6 +168,10 @@ public sealed class SmokePlugin : BaseUnityPlugin
             {
                 Check(Mod.Assets.Ensure(),"Final runtime bundle and all animation/face references load in Valheim");
                 Check(Mod.Assets.Audio.Count==8,"All eight runtime audio keys resolve");
+                var pressure=new ChaseAudio(Mod.Assets);
+                UnityEngine.Object.DestroyImmediate(GameObject.Find("ForestCrawler_ChaseAudio"));
+                pressure.Dispose(); pressure.Dispose();
+                Check(true,"Chase audio cleanup tolerates scene destruction and repeated disposal");
                 var beat=Mod.Assets.Audio["heartbeat"]; var samples=new float[beat.samples];
                 Check((bool)AccessTools.Method(typeof(AudioClip),"GetData",new[]{typeof(float[]),typeof(int)}).Invoke(beat,new object[]{samples,0}) && samples.Max(x=>Mathf.Abs(x))>.1f,"Imported pulse contains decoded PCM samples in game");
                 Check(beat.channels==1 && beat.length<=.241f && Mathf.Abs(samples[0])<.001f && Mathf.Abs(samples[samples.Length-1])<.001f,"Pulse duration and click-free edges survive bundling");
@@ -239,14 +203,20 @@ public sealed class SmokePlugin : BaseUnityPlugin
             var valkyrie=UnityEngine.Object.FindFirstObjectByType<Valkyrie>();
             if(valkyrie) { current=(Vector3)AccessTools.Field(typeof(Valkyrie),"m_targetPoint").GetValue(valkyrie); valkyrie.DropPlayer(true); }
             current+=Vector3.forward*35;
+            player.SetGhostMode(false);
             player.TeleportTo(current+Vector3.up*3,Quaternion.identity,true);
         })) yield break;
         yield return new WaitForSecondsRealtime(15);
         if(Environment.GetEnvironmentVariable("FORESTCRAWLER_SMOKE_MUSIC_ONLY")=="1")
         {
             yield return MusicRegression();
-            yield break;
+            if(!failed) File.WriteAllText(Path.Combine(output,"verified.txt"),"Actual MusicMan source playback, mute and restoration passed in injected presentation phases.");
+            Application.Quit(); yield break;
         }
+        if(Environment.GetEnvironmentVariable("FORESTCRAWLER_SMOKE_NATIVE_ONLY")=="1")
+        { yield return NativeCaptureRegression(); yield break; }
+        yield return MusicRegression();
+        if(failed) yield break;
         // Select a reachable preview position in this procedurally generated fixture.
         // A valid isolated patch of ground alone need not have a route back to the player.
         Vector3 previewDirection=Vector3.zero;
@@ -286,7 +256,8 @@ public sealed class SmokePlugin : BaseUnityPlugin
         var path=new System.Collections.Generic.List<Vector3>();
         while(Time.realtimeSinceStartup<routeDeadline && !ForestCrawler.World.Route(GameObject.Find("ForestCrawler_Local").transform.position,Player.m_localPlayer!.transform.position,true,path)) yield return new WaitForSecondsRealtime(.3f);
         if(!Try(()=> { chargeStart=GameObject.Find("ForestCrawler_Local").transform.position; global::Console.instance.TryRunCommand("crawler_anim charge"); })) yield break;
-        yield return new WaitForSecondsRealtime(.5f);
+        for (int tick=0;tick<8;tick++)
+        { yield return new WaitForSecondsRealtime(.5f); Logger.LogInfo("NATIVE_DIAGNOSTIC " + Mod.View.Status); }
         if(!Try(()=>
         {
             var creature=GameObject.Find("ForestCrawler_Local");
@@ -364,37 +335,21 @@ public sealed class SmokePlugin : BaseUnityPlugin
         if(!Try(()=>
         {
             Check(Mod.View.Status.Contains("presentation=Charge"),"Lure timeout proceeds to real terrain chase");
-            forceRouteFailure=true;
             chargeStart=GameObject.Find("ForestCrawler_Local").transform.position;
         })) yield break;
         yield return new WaitForSecondsRealtime(1.5f);
         if(!Try(()=>
         {
-            Check(Mod.View.Status.Contains("presentation=Charge"),"Failed replan preserves active charge beyond old timeout");
-            Check(Vector3.Distance(chargeStart,GameObject.Find("ForestCrawler_Local").transform.position)>.5f,"Failed replan follows last validated route");
-            forceRouteFailure=false;
-        })) yield break;
-        yield return new WaitForSecondsRealtime(.5f);
-        if(!Try(()=>
-        {
-            var recovery=(ChaseRecovery)AccessTools.Field(typeof(Presentation),"recovery").GetValue(Mod.View);
-            Check(!recovery.Active,"Current route recovers before five-second deadline");
-            forceRouteFailure=forceMovementFailure=true;
-        })) yield break;
-        yield return new WaitForSecondsRealtime(4);
-        if(!Try(()=>
-        {
-            Check(Mod.View.Status.Contains("presentation=Charge"),"Persistent obstruction retains encounter before five seconds");
-            Check(GameObject.Find("ForestCrawler_ChaseAudio"),"Recovery retains chase pressure audio");
-            CheckMusic(true,"Music remains muted during route recovery");
-        })) yield break;
-        yield return new WaitForSecondsRealtime(1.4f);
-        if(!Try(()=>
-        {
-            forceRouteFailure=forceMovementFailure=false;
-            Check(!GameObject.Find("ForestCrawler_Local"),"Persistent obstruction cancels after five seconds");
-            Check(!GameObject.Find("ForestCrawler_ChaseAudio"),"Recovery cancellation cleans chase audio immediately");
-            CheckMusic(false,"Encounter cancellation restores game music");
+            var driver=GameObject.Find("ForestCrawler_LocalDriver");
+            Check(driver && driver.GetComponent<MonsterAI>() && driver.GetComponent<Humanoid>(),"Charge uses actual MonsterAI and Humanoid");
+            var view=driver!.GetComponent<ZNetView>();
+            Check(view.IsValid() && view.IsOwner(),"Detached native driver has valid local owner state");
+            Check(ZDOMan.instance.GetZDO(view.GetZDO().m_uid)==null,"Driver ZDO is absent from world replication registry");
+            Check(!ZNetScene.instance.FindInstance(view.GetZDO().m_uid),"Driver is absent from ZNetScene instance registry");
+            Check(driver.GetComponentsInChildren<Renderer>().All(r=>!r.enabled),"Native Greydwarf visuals stay hidden");
+            Check(!BaseAI.IsEnemy(driver.GetComponent<Character>(),driver.GetComponent<Character>()),"Driver cannot select itself as an enemy");
+            CheckMusic(true,"Native chase retains music suppression");
+            Mod.Network.ClearOwn(); Mod.View.Clear();
         })) yield break;
         yield return null;
         if(!Try(()=>global::Console.instance.TryRunCommand("crawler_encounter"))) yield break;
@@ -431,7 +386,7 @@ public sealed class SmokePlugin : BaseUnityPlugin
             Check(range>=38 && range<=72,"Narrative relocation remains 40-70 metres");
         })) yield break;
         yield return new WaitForSecondsRealtime(Mod.Assets.VoiceLength+.25f);
-        if(!Try(()=> { Check(Mod.View.Status.Contains("Reveal"),"Voice automatically starts reveal without second discovery"); forceRouteFailure=true; })) yield break;
+        if(!Try(()=> { Check(Mod.View.Status.Contains("Reveal"),"Voice automatically starts reveal without second discovery"); })) yield break;
         yield return new WaitForSecondsRealtime(Mod.Assets.RevealLength);
         if(!Try(()=>
         {
@@ -442,21 +397,21 @@ public sealed class SmokePlugin : BaseUnityPlugin
         yield return new WaitForSecondsRealtime(2);
         if(!Try(()=>
         {
-            Check(Mod.View.Status.Contains("presentation=Charge") && GameObject.Find("ForestCrawler_Local"),"Initial route failure waits rather than cancelling charge");
-            forceRouteFailure=false;
+            Check(GameObject.Find("ForestCrawler_LocalDriver"),"Native driver survives moving and jumping target");
         })) yield break;
         float catchDeadline=Time.realtimeSinceStartup+35;
         while(!ForestCrawler.Capture.Active && Time.realtimeSinceStartup<catchDeadline) yield return null;
         if(!Try(()=>
         {
             fleeDuringCharge=false;
-            Check(ForestCrawler.Capture.Active,"Fast chase reaches authoritative catch of a moving and jumping target");
+            Check(ForestCrawler.Capture.Active,"Fast chase reaches authoritative catch of a moving and jumping target: "+Mod.View.Status);
             Check(jumps>=2 && airborneFrames>10,"Target really jumps repeatedly during chase: jumps="+jumps+", airborneFrames="+airborneFrames);
             captureOrigin=Player.m_localPlayer.transform.position;
             Check(Vector3.Distance(fleeOrigin,captureOrigin)>2,"Target actually flees using normal player movement: " + Vector3.Distance(fleeOrigin,captureOrigin).ToString("F2") + "m");
-            Check((int)AccessTools.Field(typeof(Presentation),"successfulReplans").GetValue(Mod.View)>0,"Chase replans against the moving target before capture");
+
             Check(Player.m_localPlayer.GetComponent<Rigidbody>().constraints==RigidbodyConstraints.FreezeAll,"Capture temporarily locks player movement");
-            Check(!GameObject.Find("ForestCrawler_ChaseAudio"),"Catch stops heartbeat and close chase audio");
+            var pressure=GameObject.Find("ForestCrawler_ChaseAudio");
+            Check(!pressure || pressure.GetComponentsInChildren<AudioSource>().All(a=>!a.isPlaying),"Catch immediately stops heartbeat and close chase audio");
             CheckMusic(true,"Capture preserves music suppression");
             var hidden=GameObject.Find("ForestCrawler_Local");
             Check(hidden.GetComponentsInChildren<Renderer>().All(r=>!r.enabled),"Catch hides world creature");
@@ -523,12 +478,197 @@ public sealed class SmokePlugin : BaseUnityPlugin
             Application.Quit();
         })) yield break;
     }
+    private IEnumerator CompareNativeTerrain()
+    {
+        var player=Player.m_localPlayer;
+        var origin=player.transform.position;
+        var rocks=Physics.OverlapSphere(origin,65,ForestCrawler.World.Solids,QueryTriggerInteraction.Ignore)
+            .Where(c=>c.name.ToLowerInvariant().Contains("rock") || c.transform.root.name.ToLowerInvariant().Contains("rock"))
+            .OrderBy(c=>Vector3.Distance(c.bounds.center,origin)).ToArray();
+        Collider selected=null!; Vector3 top=Vector3.zero;
+        foreach(var rock in rocks)
+        {
+            if(rock.bounds.size.y<1 || rock.bounds.size.y>6) continue;
+            if(Physics.Raycast(new Vector3(rock.bounds.center.x,rock.bounds.max.y+2,rock.bounds.center.z),Vector3.down,out var hit,10,ForestCrawler.World.Solids,QueryTriggerInteraction.Ignore) && hit.collider==rock)
+            { selected=rock; top=hit.point; break; }
+        }
+        if(!Try(()=>Check(selected,"Fixture contains a real generated rock for native comparison"))) yield break;
+        player.TeleportTo(top+Vector3.up*.2f,Quaternion.identity,true);
+        yield return new WaitForSecondsRealtime(5);
+        Vector3 start=Vector3.zero;
+        for(int i=0;i<36;i++)
+            if(ForestCrawler.World.Ground(top+Quaternion.Euler(0,i*10,0)*Vector3.forward*12,out start)) break;
+        var prefab=ZNetScene.instance.GetPrefab("Greydwarf");
+        for(int pass=0;pass<2;pass++)
+        {
+            GameObject driver=null!; NativePursuit? local=null;
+            if(!Try(()=>
+            {
+                if(pass==0)
+                {
+                    driver=UnityEngine.Object.Instantiate(prefab,start,Quaternion.identity);
+                    var ai=driver.GetComponent<MonsterAI>();
+                    NativePursuit.Write(ai,"m_targetCreature",player); NativePursuit.Write(ai,"m_lastKnownTargetPos",player.transform.position); ai.Alert();
+                    driver.GetComponent<Character>().m_runSpeed=12;
+                }
+                else
+                {
+                    local=new NativePursuit(start,player); driver=local.Root;
+                    Check(local.AI.m_pathAgentType==prefab.GetComponent<MonsterAI>().m_pathAgentType,"Native driver inherits the actual Greydwarf navigation agent");
+                    Check(driver.GetComponent<CapsuleCollider>().radius==prefab.GetComponent<CapsuleCollider>().radius,"Native driver inherits the actual Greydwarf body radius");
+                }
+            })) yield break;
+            float until=Time.realtimeSinceStartup+8, nearest=float.MaxValue, travel=0; var previous=start;
+            while(Time.realtimeSinceStartup<until)
+            {
+                local?.Tick(12); var point=driver.transform.position;
+                travel+=Vector3.Distance(previous,point); previous=point;
+                nearest=Mathf.Min(nearest,Vector3.Distance(point,player.transform.position));
+                yield return null;
+            }
+            if(!Try(()=>
+            {
+                Logger.LogInfo($"NATIVE_ROCK_COMPARISON pass={pass} rock={selected.name} movement={travel:F2} nearest={nearest:F2} path={NativePursuit.Read<bool>(driver.GetComponent<MonsterAI>(),"m_lastFindPathResult")}");
+                Check(travel>.5f,(pass==0 ? "Vanilla Greydwarf" : "Local native driver")+" searches toward a player on real generated rock");
+                if(local!=null)
+                {
+                    Check(driver.GetComponent<LocalCrawlerDriver>().AiTicks>0 && driver.GetComponent<LocalCrawlerDriver>().MotorTicks>0,"Real terrain pursuit executes both native AI and Character motor");
+                    Check(!BaseAI.IsEnemy(player,local.Character) && BaseAI.IsEnemy(local.Character,player),"Driver only targets its selected player and is not an ordinary enemy target");
+                    local.Dispose();
+                }
+                else ZNetScene.instance.Destroy(driver);
+            })) yield break;
+            yield return null;
+        }
+        player.TeleportTo(origin+Vector3.up*.2f,Quaternion.identity,true);
+        yield return new WaitForSecondsRealtime(5);
+    }
+    private IEnumerator NativeCaptureRegression()
+    {
+        roofFixture=true;
+        yield return CompareNativeTerrain();
+        if(failed) yield break;
+        yield return new WaitForSecondsRealtime(6);
+        if(!Try(()=>global::Console.instance.TryRunCommand("crawler_encounter"))) yield break;
+        float until=Time.realtimeSinceStartup+15;
+        while(!Mod.View.Status.Contains("presentation=Lure") && Time.realtimeSinceStartup<until) yield return null;
+        GameObject roof=null!; Vector3 roofStart=Vector3.zero;
+        var player=Player.m_localPlayer; var body=player.GetComponent<Rigidbody>();
+        var originalConstraints=body.constraints;
+        if(!Try(()=>
+        {
+            Check(Mod.View.Status.Contains("presentation=Lure"),"Arm fixture starts a server-authorized full encounter");
+            var creature=GameObject.Find("ForestCrawler_Local");
+            Vector3 ground=Vector3.zero, direction=Vector3.zero;
+            for(int i=0;i<36;i++)
+            {
+                var probeDirection=Quaternion.Euler(0,i*10,0)*Vector3.forward;
+                if(!ForestCrawler.World.Ground(creature.transform.position+probeDirection*12,out var probe)) continue;
+                var proposed=probe+Vector3.up*6.3f-probeDirection*1.95f;
+                if(Physics.Linecast(creature.transform.position+Vector3.up*2.1f,proposed+Vector3.up*.8f,ForestCrawler.World.Solids,QueryTriggerInteraction.Ignore)) continue;
+                ground=probe; direction=probeDirection; break;
+            }
+            Check(direction!=Vector3.zero,"Roof fixture has actual unobstructed scene visibility before placement");
+            roof=GameObject.CreatePrimitive(PrimitiveType.Cube); roof.name="UnreachableRoofFixture";
+            roof.transform.SetPositionAndRotation(ground+Vector3.up*3,Quaternion.LookRotation(direction));
+            roof.transform.localScale=new Vector3(4,6,4); roof.layer=LayerMask.NameToLayer("piece");
+            roofStart=ground+Vector3.up*6.3f-direction*1.95f;
+            player.TeleportTo(roofStart,Quaternion.identity,true);
+        })) yield break;
+        yield return new WaitForSecondsRealtime(5);
+        if(!Try(()=>
+        {
+            var e=AccessTools.Field(typeof(Network),"active").GetValue(Mod.Network);
+            Check((Phase)AccessTools.Field(e.GetType(),"Phase").GetValue(e)==Phase.Lure,"Roof fixture remains undiscovered before timeout transition");
+            AccessTools.Field(e.GetType(),"PhaseAt").SetValue(e,Time.realtimeSinceStartup-Rules.LureDeadlineSeconds);
+            var creaturePosition=GameObject.Find("ForestCrawler_Local").transform.position;
+            Check(ArmGrab.Visible(creaturePosition,player,30),"Torso ray sees the player on the exposed roof edge");
+            Check(!ArmGrab.Visible(player.transform.position+Vector3.right*31,player,30),"Arm grab rejects a target beyond thirty metres");
+            var blocker=GameObject.CreatePrimitive(PrimitiveType.Cube); blocker.name="ArmSightBlocker"; blocker.layer=LayerMask.NameToLayer("blocker");
+            blocker.transform.position=(creaturePosition+Vector3.up*2.1f+player.GetCenterPoint())*.5f;
+            blocker.transform.localScale=Vector3.one*3; Physics.SyncTransforms();
+            Check(!ArmGrab.Visible(creaturePosition,player,30),"Solid obstruction prevents arm-grab visibility");
+            UnityEngine.Object.DestroyImmediate(blocker); Physics.SyncTransforms();
+        })) yield break;
+        yield return new WaitForSecondsRealtime(3);
+        bool extended=false, pulling=false; float nextTrace=0; float chargeAt=Time.realtimeSinceStartup; until=chargeAt+55;
+        while(!ForestCrawler.Capture.Active && Time.realtimeSinceStartup<until)
+        {
+            if(!Try(()=>
+            {
+                if(Time.realtimeSinceStartup>=nextTrace)
+                { nextTrace=Time.realtimeSinceStartup+1; Logger.LogInfo("ARM_TRACE "+Mod.View.Status+"; player="+player.transform.position.ToString("F2")); }
+                var driver=GameObject.Find("ForestCrawler_LocalDriver");
+                if(driver)
+                {
+                    var view=driver!.GetComponent<ZNetView>();
+                    if(ZDOMan.instance.GetZDO(view.GetZDO().m_uid)!=null || ZNetScene.instance.FindInstance(view.GetZDO().m_uid))
+                        throw new Exception("Detached driver leaked into replication registry");
+                }
+                if(Mod.View.Status.Contains("presentation=GrabWindup") && !extended)
+                {
+                    extended=true;
+                    Check(Time.realtimeSinceStartup-chargeAt>26,"Arm grab does not bypass the thirty-second pursuit delay");
+                    CheckMusic(true,"Music remains suppressed during arm extension");
+                }
+                if(ArmGrab.Current!=null && !pulling)
+                {
+                    pulling=true;
+                    Check(body.isKinematic,"Authorized pull owns player physics");
+                    Check(!(bool)AccessTools.Method(typeof(Player),"TakeInput").Invoke(player,null),"Authorized pull blocks gameplay movement input");
+                    lateCapture="extended-arms";
+                }
+            })) yield break;
+            yield return null;
+        }
+        if(!Try(()=>
+        {
+            Check(extended && pulling,"Unreachable rooftop pursuit enters extension and pulling through authoritative phases: "+Mod.View.Status);
+            Check(heldPullSyncFrames>0,"Capture tolerates an injected 0.9-second gap in shared player position updates");
+            Check(ForestCrawler.Capture.Active,"Arm pull reaches the ordinary capture sequence: "+Mod.View.Status);
+            Check(ArmGrab.Current==null,"Pull releases movement ownership before closeup capture");
+        })) yield break;
+        yield return new WaitForSecondsRealtime(5.5f);
+        if(!Try(()=>
+        {
+            Check(!ForestCrawler.Capture.Active && body.constraints==originalConstraints && !body.isKinematic,"Arm capture restores native player physics");
+            Check(ForestCrawler.Capture.SafeGround(player.transform.position,out _),"Arm capture lands on dry loaded ground");
+            var beforeGravity=body.useGravity; var beforeKinematic=body.isKinematic; var beforePosition=body.position;
+            var cancelledPull=new ArmGrab(body.position+Vector3.forward*12,10); cancelledPull.Dispose(); cancelledPull.Dispose();
+            Check(ArmGrab.Current==null && body.useGravity==beforeGravity && body.isKinematic==beforeKinematic && body.constraints==originalConstraints && Vector3.Distance(body.position,beforePosition)<.01f,"Repeated pull cancellation restores exact player physics and position");
+            UnityEngine.Object.Destroy(roof);
+            roofFixture=false; Mod.Network.ClearOwn(); Mod.View.Clear();
+            File.WriteAllText(Path.Combine(output,"verified.txt"),"Actual Valheim rooftop fixture: native pursuit, real 30s deadline, visibility, extended arms, collision-checked pull, ordinary capture, safe teleport and physics cleanup. Single client only.");
+            Application.Quit();
+        })) yield break;
+    }
+    private static bool DelayPullSync(ZSyncTransform __instance)
+    {
+        if(running==null || !running.roofFixture || ArmGrab.Current==null || __instance.GetComponent<Player>()!=Player.m_localPlayer) return true;
+        if(running.heldPullSyncUntil==0) running.heldPullSyncUntil=Time.realtimeSinceStartup+.9f;
+        if(Time.realtimeSinceStartup>=running.heldPullSyncUntil) return true;
+        running.heldPullSyncFrames++; return false;
+    }
+    private static void CaptureAfterPose()
+    {
+        if(running==null || running.lateCapture==null) return;
+        string name=running.lateCapture; running.lateCapture=null;
+        running.Try(()=>
+        {
+            var model=GameObject.Find("ForestCrawler_Local");
+            foreach(var hand in model.GetComponentsInChildren<Transform>().Where(t=>t.name=="HandL"||t.name=="HandR"))
+                running.Check(Vector3.Distance(hand.position,Player.m_localPlayer.GetCenterPoint())<.4f,"Rendered arm pose keeps "+hand.name+" attached to the player's torso");
+            running.Capture(model,name);
+        });
+    }
     private void ReportDiscovery()
     {
         aimUntil=Time.realtimeSinceStartup+.48f;
     }
     private void LateUpdate()
     {
+        if(roofFixture && Mod.View.Status.Contains("presentation=Lure"))
+        { var gazeCamera=Utils.GetMainCamera(); if(gazeCamera) gazeCamera.transform.rotation=Quaternion.LookRotation(Vector3.up,Vector3.forward); return; }
         if(Time.realtimeSinceStartup>=aimUntil || !Player.m_localPlayer) return;
         var creature=GameObject.Find("ForestCrawler_Local"); if(!creature) return;
         var camera=Utils.GetMainCamera();

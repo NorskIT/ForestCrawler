@@ -1,5 +1,21 @@
 # ForestCrawler verification
 
+## 0.2.7 native pursuit and extended-arm capture
+
+Release builds against the installed Valheim 1.0.12 assemblies without warnings or errors. The package build runs 81 core checks, including the 30-second grab boundary, 30-metre range, duplicate-phase rejection, retry delay, 60-second deadline and invalid numeric input. Old custom-route/recovery tests were removed with those implementations.
+
+Actual Valheim full-world run `artifacts/runtime-20260917-233330` passed 100 assertions: independently inspected, actively playing MusicMan source suppression/restoration, preview after previous capture cleanup, tease, alternating lure, timeout-to-charge, real camera gaze, stare, relocation, native pursuit, capture, dry teleport and cleanup. The target ran 32.16m and jumped 13 times before capture. The two-minute lure deadline was advanced by the fixture; denied landing and capture cancellation are injected transaction tests.
+
+Actual Valheim run `artifacts/runtime-20260917-234558` passed 29 assertions. A vanilla Greydwarf and the detached native driver pursued a player on the same generated rock; the driver inherits the actual navigation agent/body radius and executes both native AI and Character motor updates. An elevated solid-roof fixture then exercised the real 30-second unsuccessful-pursuit delay, 30m range rejection, solid sight obstruction, arm extension, torso attachment, collision-checked pulling, ordinary capture and dry landing. A test-only 0.9-second gap in player ZSyncTransform position publication verified the pull envelope and repeated contact reporting. Repeated pull cancellation restored the previous physics flags, constraints and position. The camera was directed away during lure to isolate the arm scenario from first-discovery relocation.
+
+Unity editor checks passed for actual skinned-mesh reach at 3/12/30m and restoration of the authored pose, alongside gaze, music and visual foot IK. Rendered arm poses were inspected in editor and actual-game captures. Maximum measured stance drift was 0.001877132m in the visual fixtures; steep editor surfaces are not evidence that native Greydwarfs can climb vertical walls.
+
+Final-binary run `artifacts/runtime-20260917-234935` passed five main-menu asset/audio checks, including scene destruction before repeated audio cleanup. No world was loaded in that final focused run. The last changes after the full-world tests removed unused custom-route helpers and made destroyed-audio cleanup idempotent; the focused check verifies that cleanup change. Final package/deployed file hashes are compared with this run.
+
+Failed development runs exposed sensing-range loss, stale preview phase state, rooftop pull clearance and a fixture accidentally permitting gaze relocation. They are not counted as successful runs. HuntPlayer uses Valheim's built-in pursuit mode; no custom creature route planner or transform motor remains.
+
+Limits: all game tests used isolated saves and one actual client. Two-client visibility/isolation cancellation, dedicated-server execution, the complete Development mod combination and human audio evaluation remain unverified. Registry absence checks and injected delayed position publication are not substitutes for those multiplayer tests. No original user world or character was used.
+
 ## 0.2.6 exact music source and elevated rock targets
 
 The original bug is reproduced in actual Valheim: the hierarchy lookup returns `ocean_ambient_loop`, while the private `MusicMan.m_musicSource` field points to `music`. Focused run `artifacts/runtime-20260917-222738` passes 38 assertions with the corrected DLL. It plays a real game track at nonzero source volume, independently reads the exact source, inserts a decoy source, verifies mute/restoration across injected tease/full presentation phases and verifies saved MusicVolume is untouched. In the same isolated world, the production chase motor routes around a steep-front rock fixture, climbs its accessible back and reaches the elevated player. The fixture has no saved/network entity and is removed afterwards. This is not a human listening test or proof that every natural rock is traversable.

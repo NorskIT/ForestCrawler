@@ -11,6 +11,7 @@ internal sealed class Settings
     public bool TeaseWhisper;
     public float Start = .95f, End = .05f, Rate = 6.6943065f, Cooldown = 45, Alone = 30, Isolation = 150;
     public float GazeDistance = 35, GazeSeconds = .4f, CloseDistance = 5, MistDistance = 8;
+    public float GrabDelay = 30, GrabRange = 30, GrabExtension = 1, PullSpeed = 10, PursuitTimeout = 60;
     public float Timeout = 180, Speed = 8, StopDistance = 3;
     public float LureMin = 60, LureMax = 90, RelocateMin = 40, RelocateMax = 70;
     public float VoiceLength, ScreamLength, RevealLength;
@@ -32,6 +33,11 @@ internal sealed class Settings
         s.CloseDistance = B("Discovery", "ProximityMetres", s.CloseDistance, 1, 10, "Requires unobstructed proximity.");
         s.MistDistance = B("Discovery", "MistGazeMetres", s.MistDistance, 1, 10, "Conservative visibility cap through uncleared mist.");
         s.Timeout = B("Encounter", "TimeoutSeconds", s.Timeout, 30, 300, "Maximum encounter length; eligibility can cancel earlier.");
+        s.GrabDelay = B("Capture", "GrabDelaySeconds", s.GrabDelay, 5, 120, "Continuous unsuccessful pursuit before an extended-arm attempt.");
+        s.GrabRange = B("Capture", "GrabRangeMetres", s.GrabRange, 3, 60, "Three-dimensional arm reach; requires torso line of sight.");
+        s.GrabExtension = B("Capture", "GrabExtensionSeconds", s.GrabExtension, .5f, 3, "Visible arm extension before contact.");
+        s.PullSpeed = B("Capture", "PullMetresPerSecond", s.PullSpeed, 3, 15, "Collision-checked pull speed.");
+        s.PursuitTimeout = B("Capture", "UnsuccessfulPursuitSeconds", s.PursuitTimeout, s.GrabDelay + 5, 180, "End after continuous unsuccessful pursuit; circling does not reset this timer.");
         s.Speed = B("Encounter", "ChargeMetresPerSecond", s.Speed, 3, 10, "Preview motor speed; full chase uses a 12-18m/s adaptive speed. Animation follows actual displacement.");
         s.StopDistance = B("Encounter", "DisappearanceMetres", s.StopDistance, 3, 6, "Preview stopping separation. Full encounters catch at 2.5 metres.");
         s.LureMin = B("Encounter", "LureMinMetres", s.LureMin, 40, 90, "Minimum initial distance.");

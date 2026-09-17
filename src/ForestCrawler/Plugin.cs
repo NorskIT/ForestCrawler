@@ -8,7 +8,7 @@ namespace ForestCrawler;
 [DefaultExecutionOrder(10000)]
 public sealed class Plugin : BaseUnityPlugin
 {
-    public const string Id = "norskit.ForestCrawler", Version = "0.2.6";
+    public const string Id = "norskit.ForestCrawler", Version = "0.2.7";
     internal static Plugin Instance = null!;
     internal Settings Settings = null!;
     internal AssetStore Assets = null!;
@@ -18,7 +18,7 @@ public sealed class Plugin : BaseUnityPlugin
     private void Awake()
     {
         Instance = this;
-        Capture.Install();
+        Capture.Install(); NativePursuit.Install(); ArmGrab.Install();
         Settings = Settings.Bind(Config);
         Assets = new AssetStore(this);
         View = new Presentation(this);
@@ -31,9 +31,10 @@ public sealed class Plugin : BaseUnityPlugin
         Network.Update();
         View.Update();
     }
+    private void FixedUpdate() => View?.FixedUpdate();
     private void LateUpdate() { View.LateUpdate(); Capture.Current?.Render(); }
     private void OnGUI() => Capture.Draw();
-    private void OnDestroy() { Network?.Dispose(); View?.Clear(); Assets?.Dispose(); Capture.Uninstall(); }
+    private void OnDestroy() { Network?.Dispose(); View?.Clear(); Assets?.Dispose(); Capture.Uninstall(); ArmGrab.Uninstall(); NativePursuit.Uninstall(); }
     internal void Log(string text) => Logger.LogInfo(text);
     internal void Notice(string text) { Log(text); if (global::Console.instance) global::Console.instance.AddString("ForestCrawler: " + text); }
     private void RegisterCommands()
