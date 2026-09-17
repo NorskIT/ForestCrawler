@@ -1,4 +1,6 @@
-﻿# ForestCrawler
+![ForestCrawler banner](https://raw.githubusercontent.com/NorskIT/ForestCrawler/main/images/banner.png)
+
+# ForestCrawler
 
 A Valheim horror mod with rare, personal encounters for players exploring alone at night. For Valheim on Windows with BepInEx.
 
