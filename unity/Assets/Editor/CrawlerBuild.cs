@@ -88,7 +88,12 @@ public static class CrawlerBuild
         ValidateAnimations(root, clips);
         UnityEngine.Object.DestroyImmediate(root); AssetDatabase.SaveAssets();
         string output = Path.GetFullPath(Path.Combine(Application.dataPath, "../../artifacts/bundle")); Directory.CreateDirectory(output);
-        var paths = Directory.GetFiles(Folder).Where(p => p.EndsWith(".wav") || p.EndsWith(".mp3") || p.EndsWith(".prefab") || p.EndsWith(".shader") || p.EndsWith("rig.json")).Select(p => p.Replace('\\', '/')).ToArray();
+        var runes = (TextureImporter)AssetImporter.GetAtPath(Folder+"Runes.png");
+        runes.npotScale=TextureImporterNPOTScale.None; runes.isReadable=true; runes.mipmapEnabled=false; runes.textureCompression=TextureImporterCompression.Uncompressed;
+        runes.maxTextureSize=2048; runes.SaveAndReimport();
+        var screenShader=AssetDatabase.LoadAssetAtPath<Shader>(Folder+"CrawlerScreen.shader");
+        if(!screenShader || ShaderUtil.ShaderHasError(screenShader)) throw new InvalidOperationException("Screen shader compilation failed");
+        var paths = Directory.GetFiles(Folder).Where(p => p.EndsWith(".wav") || p.EndsWith(".mp3") || p.EndsWith(".prefab") || p.EndsWith(".shader") || p.EndsWith("rig.json") || p.EndsWith("Runes.png")).Select(p => p.Replace('\\', '/')).ToArray();
         var manifest = BuildPipeline.BuildAssetBundles(output, new[] { new AssetBundleBuild { assetBundleName = "forestcrawler.assets", assetNames = paths } }, BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.StrictMode, BuildTarget.StandaloneWindows64);
         if (!manifest || !File.Exists(Path.Combine(output, "forestcrawler.assets"))) throw new InvalidOperationException("AssetBundle build failed");
         var bundle = AssetBundle.LoadFromFile(Path.Combine(output, "forestcrawler.assets"));

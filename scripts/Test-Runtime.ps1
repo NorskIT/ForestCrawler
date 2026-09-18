@@ -1,4 +1,4 @@
-param([string]$Name = ('runtime-' + (Get-Date -Format 'yyyyMMdd-HHmmss')), [switch]$AssetsOnly, [switch]$MusicOnly, [switch]$NativeOnly)
+param([string]$Name = ('runtime-' + (Get-Date -Format 'yyyyMMdd-HHmmss')), [switch]$AssetsOnly, [switch]$MusicOnly, [switch]$NativeOnly, [switch]$Rendered)
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if ($Name -notmatch '^[a-zA-Z0-9-]+$') { throw 'Invalid run name.' }
@@ -26,6 +26,7 @@ try {
     $env:FORESTCRAWLER_SMOKE_MUSIC_ONLY = if ($MusicOnly) { "1" } else { "0" }
     $game = 'C:\Program Files (x86)\Steam\steamapps\common\Valheim\valheim.exe'
     $arguments = @('-batchmode','-screen-fullscreen','0','-screen-width','1280','-screen-height','720','-savedir',('"' + "$run/saves" + '"'),'-logFile',('"' + "$run/unity.log" + '"'),'--doorstop-enabled','true','--doorstop-target-assembly',('"' + "$run/BepInEx/core/BepInEx.Preloader.dll" + '"'))
+    if ($Rendered) { $arguments = @($arguments | Where-Object { $_ -ne '-batchmode' }) }
     $process = Start-Process -FilePath $game -ArgumentList $arguments -WorkingDirectory $run -WindowStyle Hidden -PassThru
     $process.Id | Set-Content "$run/process-id.txt"
     Write-Output "Isolated Valheim process $($process.Id), logs: $run"

@@ -4,7 +4,7 @@ $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (Get-Process valheim -ErrorAction SilentlyContinue) { throw 'Close Valheim before replacing the runtime package.' }
 $bep = Join-Path $env:APPDATA "com.kesomannen.gale/valheim/profiles/$Profile/BepInEx"
 if (!(Test-Path -LiteralPath (Join-Path $bep 'core/BepInEx.dll'))) { throw "Missing profile BepInEx: $bep" }
-$source = Join-Path $root 'artifacts/ForestCrawler-0.2.7/BepInEx/plugins/ForestCrawler'
+$source = Join-Path $root 'artifacts/ForestCrawler-0.2.8/BepInEx/plugins/ForestCrawler'
 foreach ($name in @('ForestCrawler.dll','forestcrawler.assets')) { if (!(Test-Path -LiteralPath (Join-Path $source $name))) { throw "Incomplete package: $name. Build-Package.ps1 must succeed first." } }
 $destination = Join-Path $bep 'plugins/ForestCrawler'
 $backup = Join-Path $root ('artifacts/backups/' + $Profile + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))

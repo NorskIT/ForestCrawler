@@ -1,3 +1,11 @@
+# 0.2.8 review
+
+- Native chase and collision-checked pull are retained; only extended-arm posing changes.
+- Screen resources belong to the target-client encounter and are disposed before capture or on cancellation. No shared camera/preferences modifications.
+- Server-generated cues carry encounter identity, validate sender through the existing server channel and are deduplicated on both ends.
+- Retreat uses authoritative horizontal distance in Full/Lure only; phase changes invalidate obsolete countdowns.
+- Rune import preserves the supplied atlas and explicitly crops Latin labels. New shaders/textures require a rebuilt bundle, not just a DLL replacement.
+
 # 0.2.7 pursuit replacement review
 
 The previous custom route sampler, corridor repair, surface A*, virtual body sweeps and five-second recovery timer have been removed. They repeatedly failed on real terrain despite synthetic fixture passes. Production now runs the installed native ground-enemy AI and Character physics; the only native movement adapter concerns presentation, speed, selected-target isolation and disabled combat.

@@ -23,6 +23,9 @@ internal sealed class Presentation
         AccessTools.FieldRefAccess<MusicMan, AudioSource>("m_musicSource");
     private static AudioSource? MusicSource => MusicMan.instance ? ReadMusicSource(MusicMan.instance) : null;
     private Capture? capture;
+    private EncounterScreen? screen;
+    private bool grabVoice;
+    internal void ShowCue(string encounter, Cue cue) { if (id == encounter && !preview) screen?.Show(cue); }
     private Vector3? landingCandidate;
     private bool captureFinished;
     private string id = "", clip = "idle";
@@ -42,7 +45,7 @@ internal sealed class Presentation
     private Vector3 progressPosition;
     private string grabReason = "Not chasing";
     private float Now => Time.realtimeSinceStartup;
-    internal string Status => $"type={kind}; music=({music.Status}); heartbeat={chaseAudio?.Bpm ?? 0:F0} BPM; pursuit=({pursuit?.Status ?? "none"}); unsuccessful={Now-unsuccessfulSince:F1}s; grab={grabReason}; teleport={capture?.Status ?? "none"}; presentation={(preview ? "preview/" + clip : id == "" ? "none" : phase.ToString())}; authorityLeaseAge={Now-leaseAt:F2}s; gaze={gaze:F2}/{settings.GazeSeconds:F2}s ({gazeReason})";
+    internal string Status => $"type={kind}; {screen?.Status ?? "screen=off"}; music=({music.Status}); heartbeat={chaseAudio?.Bpm ?? 0:F0} BPM; pursuit=({pursuit?.Status ?? "none"}); unsuccessful={Now-unsuccessfulSince:F1}s; grab={grabReason}; teleport={capture?.Status ?? "none"}; presentation={(preview ? "preview/" + clip : id == "" ? "none" : phase.ToString())}; authorityLeaseAge={Now-leaseAt:F2}s; gaze={gaze:F2}/{settings.GazeSeconds:F2}s ({gazeReason})";
     internal Presentation(Plugin plugin) { this.plugin = plugin; settings = plugin.Settings; }
     internal void Debug(string command)
     {
@@ -94,7 +97,9 @@ internal sealed class Presentation
         if (id != encounter || seq <= sequence) return;
         sequence = seq; phase = state; phaseAt = leaseAt = Now; gaze = 0; discoverySent = false; awaitingFinish = false;
         position = point;
-        if (state == Phase.Lure || state == Phase.Tease) music.Begin(MusicSource);
+        if (state == Phase.Lure || state == Phase.Tease)
+        { music.Begin(MusicSource); screen ??= new EncounterScreen(plugin, kind == EncounterKind.Tease); }
+        screen?.SetPhase(state);
         if (state == Phase.Relocating) { if (sound) sound!.Stop(); if (creature) creature!.SetActive(false); return; }
         searching = false;
         if (state == Phase.Caught)
@@ -119,6 +124,7 @@ internal sealed class Presentation
         if (state == Phase.GrabWindup)
         {
             grabRequested = false; pursuit?.Pause(true); Play("scream"); FaceTarget();
+            if (!grabVoice) { Voice("voice"); grabVoice = true; }
             arms ??= new ExtendedArms(creature!); grabReason = "Extending";
         }
         if (state == Phase.Pulling)
@@ -177,6 +183,7 @@ internal sealed class Presentation
     {
         arms?.Restore();
         music.Refresh(MusicSource);
+        screen?.Update();
         if (id == "" && !preview) return;
         var player = Player.m_localPlayer;
         if (!player || player.IsDead() || !ZNet.instance) { if (id != "") Fail("Target left or died."); else Clear(); return; }
@@ -353,7 +360,7 @@ internal sealed class Presentation
     internal void Clear()
     {
         pull?.Dispose(); pull = null; arms?.Dispose(); arms = null; pursuit?.Dispose(); pursuit = null;
-        music.Clear();
+        music.Clear(); screen?.Dispose(); screen = null; grabVoice = false;
         Capture.ClearWarm();
         (capture ?? Capture.Current)?.Dispose(); capture = null; captureFinished = false; landingCandidate = null;
         chaseAudio?.Dispose(); chaseAudio = null;

@@ -12,6 +12,8 @@ internal sealed class AssetStore : IDisposable
     private AssetBundle? bundle;
     private float retryAt;
     private Shader? horrorShader;
+    internal Shader ScreenShader = null!, RuneShader = null!;
+    internal Texture2D RuneAtlas = null!;
     internal Shader CloseupShader = null!;
     private readonly MaterialPropertyBlock properties = new();
     internal GameObject Prefab = null!, CloseupPrefab = null!;
@@ -36,6 +38,10 @@ internal sealed class AssetStore : IDisposable
             if (!bundle) throw new InvalidDataException("AssetBundle could not be loaded");
             horrorShader = bundle.LoadAsset<Shader>("assets/crawler/forestcrawlerhorror.shader");
             if (!horrorShader || !horrorShader.isSupported) throw new InvalidDataException("Creature horror shader is missing or unsupported");
+            ScreenShader = bundle.LoadAsset<Shader>("assets/crawler/crawlerscreen.shader");
+            RuneShader = bundle.LoadAsset<Shader>("assets/crawler/crawlerrunes.shader");
+            RuneAtlas = bundle.LoadAsset<Texture2D>("assets/crawler/runes.png");
+            if (!ScreenShader || !ScreenShader.isSupported || !RuneShader || !RuneShader.isSupported || !RuneAtlas || !RuneAtlas.isReadable || RuneAtlas.width!=1780 || RuneAtlas.height!=883) throw new InvalidDataException("Missing screen shader or readable rune atlas");
             Prefab = bundle.LoadAsset<GameObject>("assets/crawler/forestcrawler.prefab");
             if (!Prefab || Prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true).Length != 3) throw new InvalidDataException("Prefab/LOD meshes missing");
             var animator = Prefab.GetComponentInChildren<Animator>(true);

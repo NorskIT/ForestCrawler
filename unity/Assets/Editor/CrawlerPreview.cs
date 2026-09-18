@@ -51,12 +51,21 @@ public static class CrawlerPreview
         var rig=new ExtendedArms(model);
         var transforms=model.GetComponentsInChildren<Transform>();
         var saved=transforms.Select(t=>(t.localPosition,t.localRotation,t.localScale)).ToArray();
+        var left=transforms.First(t=>t.name=="UpperArmL"); var right=transforms.First(t=>t.name=="UpperArmR");
+        float width=Mathf.Abs(Vector3.Dot(left.position-right.position,model.transform.right));
+        float sideSign=Mathf.Sign(Vector3.Dot(left.position-right.position,model.transform.right));
         foreach(float distance in new[]{3f,12f,30f})
+        foreach(float height in new[]{0f,6f,15f})
+        foreach(float lateral in new[]{-5f,0f,5f})
         {
-            var target=model.transform.position+Vector3.forward*distance+Vector3.up*6;
+            var target=model.transform.position+Vector3.forward*distance+Vector3.up*height+Vector3.right*lateral;
             rig.Pose(target,1);
-            foreach(string side in new[]{"L","R"})
-                if(Vector3.Distance(transforms.First(t=>t.name=="Hand"+side).position,target)>.3f) throw new Exception("Extended hand misses target");
+            var axis=Vector3.Cross(Vector3.up,target-(left.position+right.position)*.5f).normalized;
+            foreach(string joint in new[]{"Forearm","Hand"})
+            {
+                var difference=transforms.First(t=>t.name==joint+"L").position-transforms.First(t=>t.name==joint+"R").position;
+                if(Mathf.Abs(Vector3.Dot(difference,axis)-sideSign*width)>.03f) throw new Exception("Arms crossed or changed rail width at "+joint);
+            }
             var skin=model.GetComponentsInChildren<SkinnedMeshRenderer>().OrderByDescending(r=>r.sharedMesh.vertexCount).First();
 
             var baked=new Mesh(); skin.BakeMesh(baked, true);
@@ -68,7 +77,7 @@ public static class CrawlerPreview
                 if(transforms[i].localPosition!=saved[i].Item1 || transforms[i].localRotation!=saved[i].Item2 || transforms[i].localScale!=saved[i].Item3)
                     throw new Exception("Arm restoration altered authored rig");
         }
-        rig.Dispose(); Debug.Log("FORESTCRAWLER_ARMS_OK: skin reach at 3/12/30m and exact authored pose restoration");
+        rig.Dispose(); Debug.Log("FORESTCRAWLER_ARMS_OK: parallel skin reach at 3/12/30m, height/side offsets, constant width and authored pose restoration");
     }
     public static void Validate()
     {

@@ -1,5 +1,24 @@
 # ForestCrawler verification
 
+## 0.2.8 screen cues, retreat and parallel arms
+
+Release compilation targets the installed Valheim 1.0.14 assemblies. The core suite passes 94 checks, including warning boundaries at 105/120 seconds, retreat thresholds at +50/+75m, invalid distances and phase/type exclusions.
+
+Unity arm validation passes 27 combinations of distance (3/12/30m), height (0/6/15m) and lateral offset (-5/0/5m). It checks forearm/hand side order and constant width, baked skin reach and exact restoration. The rendered arm preview was inspected; the two extended arms remain parallel. Existing visual stance/gaze/music checks also pass.
+
+Actual Valheim full-world run `artifacts/runtime-20260918-124849` passes 116 assertions. It exercises camera rendering, rune ordering/deduplication, effect opt-out and cleanup, exact MusicMan suppression/restoration, tease, alternating lure, server warning, automatic reveal, retreat warning/early chase, normal discovery/relocation, moving/jumping target capture and dry teleport. The player flees 58.16m and jumps 15 times. The warning/deadline clocks and retreat baseline are explicitly injected test inputs; the production server tick, shared target position, routed cues and phase transitions run normally. This is not a measurement of a human running the extra 75m.
+
+The hidden test window does not render automatic camera frames. Screen tests explicitly render the actual game camera with its installed effects, then inspect saved 1280x720 and 2560x1080 images. They do not establish smooth frame pacing or human comfort. Visual inspection caught automatic atlas rescaling and a font-alpha issue that state-only assertions missed; both were fixed before the successful full-world run. The negative transition was subsequently adjusted to retain more scene contrast and the left-to-right rune reveal gained a soft fade.
+
+Final-binary and final-bundle run `artifacts/runtime-20260918-130016` passes 41 assertions, including the camera/text regression, native rock comparison, real 30-second arm delay, spatial I-see-you playback, side order and shoulder-width preservation during the rendered pose, collision-checked pull, capture, dry teleport and physics restoration. It also tolerates a test-only 0.9-second gap in shared player position publication. Final negative/static and rune captures were inspected; the static contribution was reduced to preserve the dark scene and the negative curve now preserves more shadow detail. The actual-game arm image shows separate parallel arms. Deployment hashes are checked against this run.
+
+All game tests use one actual client and isolated saves. Two-client visibility/isolation, dedicated-server runtime, the complete Development mod combination, automatic foreground frame pacing and human audio/comfort evaluation remain unverified. No user character or world was used.
+
+Native-fixture runs `125235` and `125634` did not complete the arm assertions: native circling lost line of sight in one, and an ordinary capture ended the other before an arm attempt. The final fixture holds the test player on a 12m solid roof and moves its test position to an exposed edge when required. This isolates extension/pulling from incidental slips, reachable terrain and occlusion; it is not a human rooftop gameplay test. Production visibility and movement logic are unchanged.
+
+Earlier screen runs are development diagnostics, not final visual acceptance: `124105` failed the automatic-render assertion; `124311` rendered the world without the previous GUI overlay; `124644` exposed incorrect atlas crops in its saved image despite passing state assertions.
+
+
 ## 0.2.7 native pursuit and extended-arm capture
 
 Release builds against the installed Valheim 1.0.12 assemblies without warnings or errors. The package build runs 81 core checks, including the 30-second grab boundary, 30-metre range, duplicate-phase rejection, retry delay, 60-second deadline and invalid numeric input. Old custom-route/recovery tests were removed with those implementations.

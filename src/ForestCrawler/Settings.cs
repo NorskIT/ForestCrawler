@@ -7,6 +7,8 @@ namespace ForestCrawler;
 [Serializable]
 internal sealed class Settings
 {
+    public bool ScreenEffects = true, RuneText = true;
+    public float ScreenStrength = 1;
     public bool Natural = true;
     public bool TeaseWhisper;
     public float Start = .95f, End = .05f, Rate = 6.6943065f, Cooldown = 45, Alone = 30, Isolation = 150;
@@ -47,6 +49,9 @@ internal sealed class Settings
         s.HorrorStrength = B("Visuals", "HorrorStrength", s.HorrorStrength, 0, 1, "Local creature-only darkness and surface grain. The body remains opaque. Zero restores ordinary materials.");
         s.ChromaticPixels = B("Visuals", "ChromaticPixels", s.ChromaticPixels, 0, 5, "Local red/blue contour displacement in screen pixels; does not affect the world camera.");
         s.GrainPixels = B("Visuals", "GrainPixels", s.GrainPixels, 1, 4, "Local dither grain size in screen pixels.");
+        s.ScreenEffects = config.Bind("Visuals", "ScreenEffects", true, "Local encounter camera effects; does not change encounter rules.").Value;
+        s.RuneText = config.Bind("Visuals", "RuneText", true, "Local rune warnings and English translations.").Value;
+        s.ScreenStrength = B("Visuals", "ScreenStrength", 1, 0, 1, "Local screen effect intensity. Zero disables camera effects.");
         return s;
     }
     internal string Serialize() => JsonUtility.ToJson(this);

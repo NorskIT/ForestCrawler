@@ -93,4 +93,17 @@ Check("Grab cannot restart pulling", !Rules.CanStartGrab(Phase.Pulling,35,0,20,3
 Check("Blocked pull retry waits three seconds", !Rules.CanStartGrab(Phase.Charge,35,.01,20,30,60,30));
 Check("Unsuccessful pursuit expires at sixty seconds", !Rules.CanStartGrab(Phase.Charge,60,0,20,30,60,30));
 Check("Grab rejects non-finite target distance", !Rules.CanStartGrab(Phase.Charge,35,0,double.NaN,30,60,30));
+Check("Warning waits until 105 seconds", !Rules.WarnLure(EncounterKind.Full,Phase.Lure,104.999));
+Check("Warning opens fifteen seconds before chase", Rules.WarnLure(EncounterKind.Full,Phase.Lure,105));
+Check("Warning expires at chase deadline", !Rules.WarnLure(EncounterKind.Full,Phase.Lure,120));
+Check("Tease cannot warn of chase", !Rules.WarnLure(EncounterKind.Tease,Phase.Lure,105));
+Check("Discovery discards automatic warning", !Rules.WarnLure(EncounterKind.Full,Phase.Stare,105));
+Check("Retreat below fifty metres is silent", Rules.EscapeLevel(EncounterKind.Full,Phase.Lure,49.999)==0);
+Check("Retreat warning includes fifty metres", Rules.EscapeLevel(EncounterKind.Full,Phase.Lure,50)==1);
+Check("Retreat waits until seventy five metres", Rules.EscapeLevel(EncounterKind.Full,Phase.Lure,74.999)==1);
+Check("Retreat starts chase at seventy five metres", Rules.EscapeLevel(EncounterKind.Full,Phase.Lure,75)==2);
+Check("Large retreat jump still starts chase", Rules.EscapeLevel(EncounterKind.Full,Phase.Lure,200)==2);
+Check("Retreat never triggers during relocation", Rules.EscapeLevel(EncounterKind.Full,Phase.Watching,100)==0);
+Check("Tease ignores retreat", Rules.EscapeLevel(EncounterKind.Tease,Phase.Lure,100)==0);
+Check("Invalid retreat distance rejected", Rules.EscapeLevel(EncounterKind.Full,Phase.Lure,double.NaN)==0);
 Console.WriteLine($"{passed} core checks passed. These are not Valheim runtime tests.");

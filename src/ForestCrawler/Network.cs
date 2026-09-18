@@ -8,7 +8,7 @@ namespace ForestCrawler;
 internal sealed class Network : IDisposable
 {
     private const string Rpc = "ForestCrawler.v2";
-    private enum Kind { Hello, Welcome, Debug, Action, Notice, Prepare, Candidate, State, Discovery, Pose, Lease, Stop, Clear, Failure, Finished, Landing, Permit, Grab, Progress }
+    private enum Kind { Hello, Welcome, Debug, Action, Notice, Prepare, Candidate, State, Discovery, Pose, Lease, Stop, Clear, Failure, Finished, Landing, Permit, Grab, Progress, Cue }
     private sealed class Ready { internal float Seen, Voice, Scream, Reveal; internal bool Assets; }
     private sealed class Actor { internal long Peer; internal string Identity = ""; internal Vector3 Position; internal bool Dead; }
     private sealed class Encounter
@@ -18,6 +18,7 @@ internal sealed class Network : IDisposable
         internal long Owner; internal bool Test, SetTime, Activated; internal Phase Phase;
         internal Vector3 Position; internal float Started, PhaseAt, LastPose, LastSeen;
         internal float LastProgress, ProgressAt, NextGrab; internal Vector3 ProgressPosition, PullPosition; internal float PullAt; internal bool Chasing;
+        internal Vector3 LureOrigin; internal float StartDistance, Retreat; internal int Cues; internal bool AutomaticReveal;
         internal int Sequence; internal float Voice, Scream, Reveal, AttackAt;
     }
     private readonly Plugin plugin;
@@ -92,10 +93,24 @@ internal sealed class Network : IDisposable
                 if (Vector3.Distance(pulled.Position,e.PullPosition) > .01f)
                 { e.PullPosition = pulled.Position; e.PullAt = Now; }
             }
-            if (Rules.LureExpired(e.Type, e.Phase, Now - e.PhaseAt)) Change(Phase.Reveal);
+            var targetActor = actors.FirstOrDefault(a => a.Peer == e.Owner);
+            if (e.Type == EncounterKind.Full && e.Phase == Phase.Lure && targetActor != null)
+            {
+                e.Retreat = Vector3.ProjectOnPlane(targetActor.Position-e.LureOrigin,Vector3.up).magnitude-e.StartDistance;
+                int escape = Rules.EscapeLevel(e.Type,e.Phase,e.Retreat);
+                if (escape >= 1) SendCue(Cue.Escape);
+                if (escape == 2) Change(Phase.Reveal);
+                else
+                {
+                    if (Rules.WarnLure(e.Type,e.Phase,Now-e.Started)) SendCue(Cue.Warning);
+                    if (Now-e.Started >= Rules.LureDeadlineSeconds-e.Reveal)
+                    { e.AutomaticReveal = true; Change(Phase.Reveal); }
+                }
+            }
+            if (e.Chasing && e.Phase != Phase.Caught && targetActor != null && Vector3.Distance(e.Position,targetActor.Position) <= 50) SendCue(Cue.Close);
             if (e.Phase == Phase.Watching && Now - e.PhaseAt >= e.Voice) Change(Phase.Reveal);
             if (e.Phase == Phase.Caught && Now - e.PhaseAt > 5.5f) { Stop("Capture deadline expired."); return; }
-            if (e.Phase == Phase.Reveal && Now - e.PhaseAt >= e.Reveal) Change(Phase.Charge);
+            if (e.Phase == Phase.Reveal && (e.AutomaticReveal ? Now-e.Started >= Rules.LureDeadlineSeconds : Now-e.PhaseAt >= e.Reveal)) Change(Phase.Charge);
             if (e.Phase == Phase.Stare && Now - e.PhaseAt >= .5f) { Change(Phase.Relocating); Prepare(); }
             if (e.Phase == Phase.Tail && Now - e.AttackAt > e.Scream + 2) { Stop("Completed."); return; }
             if (active != null) Send(e.Owner, Kind.Lease, p => { p.Write(e.Id); p.Write(e.Sequence); });
@@ -195,6 +210,7 @@ internal sealed class Network : IDisposable
                 case Kind.State when fromServer: plugin.View.State(p.ReadString(), p.ReadInt(), (Phase)p.ReadInt(), p.ReadVector3()); break;
                 case Kind.Discovery when Server: AcceptDiscovery(sender, p); break;
                 case Kind.Pose when Server: AcceptPose(sender, p); break;
+                case Kind.Cue when fromServer: plugin.View.ShowCue(p.ReadString(), (Cue)p.ReadInt()); break;
                 case Kind.Lease when fromServer: plugin.View.Lease(p.ReadString(), p.ReadInt()); break;
                 case Kind.Stop when fromServer: plugin.View.Stop(p.ReadString(), p.ReadString()); break;
                 case Kind.Clear when Server: if (active?.Owner == sender) Stop("Cleared by target."); break;
@@ -279,7 +295,7 @@ internal sealed class Network : IDisposable
             var actor = actors.FirstOrDefault(a => a.Peer == sender);
             double remaining = actor == null ? 0 : cooldowns.Remaining(actor.Identity, Utc);
             float solitude = alone.TryGetValue(sender, out float since) ? Now - since : 0;
-            Notice(sender, $"authority=server; phase={active?.Phase.ToString() ?? "none"}; type={active?.Type.ToString() ?? "none"}; hasNaturalTease={(actor != null && progression.HasTease(actor.Identity))}; quietMinutes={(actor == null ? 0 : progression.Remaining(actor.Identity, Utc) / 60):F1}; online={actors.Count}; eligibility={(reason == "" ? "ready" : reason)}; natural={plugin.Settings.Natural}; rate={plugin.Settings.Rate:F4}/eligible-hour/N; cooldownRemaining={remaining / 60:F1} real minutes; cooldownMinimum={plugin.Settings.Cooldown}m; isolation={solitude:F1}s; time={Rules.Fraction(ZNet.instance.GetTimeSeconds(), EnvMan.instance.m_dayLengthSec):F4}"); return;
+            Notice(sender, $"authority=server; cues={active?.Cues ?? 0}; retreat={active?.Retreat ?? 0:F1}m; autoChaseRemaining={(active == null ? 0 : Math.Max(0,120-(Now-active.Started))):F1}s; phase={active?.Phase.ToString() ?? "none"}; type={active?.Type.ToString() ?? "none"}; hasNaturalTease={(actor != null && progression.HasTease(actor.Identity))}; quietMinutes={(actor == null ? 0 : progression.Remaining(actor.Identity, Utc) / 60):F1}; online={actors.Count}; eligibility={(reason == "" ? "ready" : reason)}; natural={plugin.Settings.Natural}; rate={plugin.Settings.Rate:F4}/eligible-hour/N; cooldownRemaining={remaining / 60:F1} real minutes; cooldownMinimum={plugin.Settings.Cooldown}m; isolation={solitude:F1}s; time={Rules.Fraction(ZNet.instance.GetTimeSeconds(), EnvMan.instance.m_dayLengthSec):F4}"); return;
         }
         if (!Admin(sender)) { Notice(sender, "Multiplayer debug commands require server administrator permission."); return; }
         if (command == "spawn" || command == "anim idle" || command == "anim scream" || command == "anim charge")
@@ -347,9 +363,11 @@ internal sealed class Network : IDisposable
                 catch (System.IO.IOException error) { plugin.Log("Cooldown persistence failed: " + error.Message); Stop("Unable to save cooldown; encounter cancelled."); return; }
                 catch (UnauthorizedAccessException error) { plugin.Log("Cooldown persistence failed: " + error.Message); Stop("Unable to save cooldown; encounter cancelled."); return; }
             }
-            e.Activated = true; e.Started = Now;
+            e.Activated = true; e.Started = Now; e.LureOrigin = position;
+            e.StartDistance = Vector3.ProjectOnPlane(target.Position-position,Vector3.up).magnitude;
         }
         Change(relocate ? Phase.Watching : e.Type == EncounterKind.Tease ? Phase.Tease : Phase.Lure);
+        if (!relocate) SendCue(Cue.Start);
     }
     private void AcceptDiscovery(long sender, ZPackage p)
     {
@@ -381,6 +399,14 @@ internal sealed class Network : IDisposable
         if (phase == Phase.Charge && !e.Chasing)
         { e.Chasing = true; e.LastProgress = e.ProgressAt = Now; e.ProgressPosition = e.Position; }
         Send(e.Owner, Kind.State, p => { p.Write(e.Id); p.Write(e.Sequence); p.Write((int)e.Phase); p.Write(e.Position); });
+        if (phase == Phase.Charge) SendCue(Cue.Run);
+    }
+    private void SendCue(Cue cue)
+    {
+        var e = active; if (e == null || (e.Cues & (1 << (int)cue)) != 0) return;
+        e.Cues |= 1 << (int)cue;
+        Send(e.Owner, Kind.Cue, p => { p.Write(e.Id); p.Write((int)cue); });
+        plugin.Log($"Encounter cue {cue}; phase={e.Phase}; retreat={e.Retreat:F1}m");
     }
     private void Stop(string reason)
     {

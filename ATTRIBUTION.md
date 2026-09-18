@@ -22,3 +22,7 @@ Author/license information for these files was not supplied. No public redistrib
 ## Tools and game references
 
 Blender 4.5.3 LTS and Unity 6000.0.75f1 are build tools, not runtime dependencies of the packaged mod. Valheim, Unity, BepInEx, Harmony and game reference assemblies are not redistributed in the mod package.
+
+## Supplied rune atlas
+
+The user supplied the rune chart stored as `unity/Assets/Crawler/Runes.png`. Author and license metadata were not supplied. No public redistribution license is asserted. The original pixels are retained; runtime glyph rectangles omit Latin labels and derive transparent, pale-red glyphs for encounter text.

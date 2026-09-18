@@ -3,6 +3,7 @@ using System;
 namespace ForestCrawler;
 
 internal enum Phase { Preparing, Lure, Relocating, Watching, Reveal, Charge, Tail, Stare, Tease, Caught, GrabWindup, Pulling }
+internal enum Cue { Start, Warning, Run, Close, Escape }
 internal enum EncounterKind { Full, Tease }
 
 internal sealed class ScheduleClock
@@ -19,11 +20,15 @@ internal sealed class ScheduleClock
 
 internal static class Rules
 {
-    internal const int Protocol = 3;
+    internal const int Protocol = 4;
     internal static bool CanStartGrab(Phase phase, double stalled, double retryRemaining, double distance, double delay, double timeout, double range) =>
         phase == Phase.Charge && Finite(stalled) && Finite(distance) && stalled >= delay && stalled < timeout &&
         retryRemaining <= 0 && distance >= 0 && distance <= range;
 
+    internal static int EscapeLevel(EncounterKind kind, Phase phase, double extra) =>
+        kind != EncounterKind.Full || phase != Phase.Lure || !Finite(extra) ? 0 : extra >= 75 ? 2 : extra >= 50 ? 1 : 0;
+    internal static bool WarnLure(EncounterKind kind, Phase phase, double elapsed) =>
+        kind == EncounterKind.Full && phase == Phase.Lure && elapsed >= 105 && elapsed < 120;
     internal const float LureDeadlineSeconds = 120;
     internal static bool LureExpired(EncounterKind kind, Phase phase, double elapsed) =>
         kind == EncounterKind.Full && phase == Phase.Lure && elapsed >= LureDeadlineSeconds;

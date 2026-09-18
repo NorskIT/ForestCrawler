@@ -2,7 +2,7 @@
   <Import Project="../../Environment.props" />
   <PropertyGroup>
     <TargetFramework>net481</TargetFramework><LangVersion>latest</LangVersion><Nullable>enable</Nullable>
-    <Version>0.2.7</Version><Deterministic>true</Deterministic><AssemblyName>ForestCrawler</AssemblyName>
+    <Version>0.2.8</Version><Deterministic>true</Deterministic><AssemblyName>ForestCrawler</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="BepInEx" HintPath="$(BepDir)/core/BepInEx.dll" Private="false" />

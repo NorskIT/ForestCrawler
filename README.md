@@ -7,6 +7,8 @@ A Valheim horror mod with rare, personal encounters for players exploring alone 
 ## Features
 
 - Invisible audio teases and full encounters in Black Forest, Swamp and Mistlands.
+- Local darkening, CCTV interference and blood-red rune warnings with English translations.
+- Retreating 50 metres farther from the first lure warns you; 75 metres triggers pursuit.
 - Music is silenced for the targeted player during encounters and restored afterwards.
 - Directional whispers, a stalking creature, fast pursuit and distance-driven heartbeat audio.
 - Native ground-enemy pursuit, with extended arms that can grab a visible, unreachable player within 30 metres after 30 seconds.
@@ -41,6 +43,6 @@ Enter a world and press **F5**. In multiplayer, encounter and preview commands r
 | `crawler_encounter tease` | Test one invisible audio tease. |
 | `crawler_start` | Start a natural encounter using progression rules; advances shared world time to midnight. |
 | `crawler_clear` | Remove your creature, audio and temporary encounter state. |
-| `crawler_status` | Show readiness, encounter state, eligibility and native pursuit and arm-grab details. |
+| `crawler_status` | Show readiness, encounter state, eligibility, screen cues, retreat distance and native pursuit details. |
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for builds and configuration, and [ATTRIBUTION.md](ATTRIBUTION.md) for asset credits.

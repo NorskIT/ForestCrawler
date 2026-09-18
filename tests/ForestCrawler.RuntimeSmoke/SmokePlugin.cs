@@ -21,7 +21,8 @@ public sealed class SmokePlugin : BaseUnityPlugin
     private Vector3 chargeStart;
     private float aimUntil;
     private string? lateCapture;
-    private bool roofFixture;
+    private bool roofFixture, holdRoof;
+    private Vector3 heldRoofPoint;
     private float heldPullSyncUntil;
     private int heldPullSyncFrames;
     private bool fleeDuringCharge;
@@ -41,6 +42,76 @@ public sealed class SmokePlugin : BaseUnityPlugin
         var test=running;
         if (test==null || !test.fleeDuringCharge || ForestCrawler.Capture.Active || __instance!=Player.m_localPlayer || !test.Mod.View.Status.Contains("presentation=Charge")) return;
         if(test.fleeDirection.sqrMagnitude>.01f) { __instance.SetLookDir(test.fleeDirection); movedir=Vector3.forward; run=true; }
+    }
+    private void ScreenFrame(string name,int width,int height)
+    {
+        var camera=Utils.GetMainCamera(); var previous=camera.targetTexture; var active=RenderTexture.active;
+        var target=new RenderTexture(width,height,24); var image=new Texture2D(width,height,TextureFormat.RGB24,false);
+        try
+        {
+            camera.targetTexture=target; camera.Render(); RenderTexture.active=target;
+            image.ReadPixels(new Rect(0,0,width,height),0,0); image.Apply();
+            File.WriteAllBytes(Path.Combine(output,name+".png"),image.EncodeToPNG());
+        }
+        finally { camera.targetTexture=previous; RenderTexture.active=active; target.Release(); UnityEngine.Object.Destroy(target); UnityEngine.Object.Destroy(image); }
+    }
+    private IEnumerator ScreenRegression()
+    {
+        string id="screen-fixture"; int seq=0;
+        var origin=Player.m_localPlayer.transform.position;
+        Mod.View.Prepare(id,seq,true,false,origin,Mod.Settings,EncounterKind.Full);
+        Mod.View.State(id,++seq,Phase.Lure,origin+Vector3.forward*20);
+        Mod.View.ShowCue(id,Cue.Start);
+        float until=Time.realtimeSinceStartup+3.3f;
+        while(Time.realtimeSinceStartup<until) { Mod.View.Lease(id,seq); yield return null; }
+        if(!Try(()=>
+        {
+            var screen=(EncounterScreen)AccessTools.Field(typeof(Presentation),"screen").GetValue(Mod.View);
+            var pass=Utils.GetMainCamera().GetComponent<CrawlerScreenPass>();
+            Logger.LogInfo($"Screen diagnostic: view={Mod.View.Status}, pass={pass}, frames={pass?.Frames}, cameraEnabled={Utils.GetMainCamera().enabled}, pipeline={UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline}");
+            if(pass && pass.Frames==0) Utils.GetMainCamera().Render();
+            Check(pass && pass.Frames>0,"Screen shader executes on the actual Valheim camera");
+            var glyphs=(System.Collections.Generic.Dictionary<char,Texture2D>)AccessTools.Field(typeof(EncounterScreen),"glyphs").GetValue(screen);
+            Check(glyphs.Count==26 && glyphs.Values.All(t=>t.width>5 && t.height>30),"All twenty-six rune crops contain visible glyphs");
+            Check(screen.Status.Contains("rune=Start"),"Start rune survives through translation reveal");
+            Mod.View.ShowCue(id,Cue.Start);
+            Check(Time.realtimeSinceStartup-(float)AccessTools.Field(typeof(EncounterScreen),"cueAt").GetValue(screen)>3,"Duplicate cue does not restart text animation");
+            ScreenFrame("rune-start",1280,720);
+            ScreenFrame("rune-ultrawide",2560,1080);
+            pass!.Set(1,.9f,0); ScreenFrame("screen-negative",1280,720);
+            pass.Set(1,0,1); ScreenFrame("screen-static",1280,720);
+        })) yield break;
+        until=Time.realtimeSinceStartup+.7f;
+        while(Time.realtimeSinceStartup<until) { Mod.View.Lease(id,seq); yield return null; }
+        if(!Try(()=>
+        {
+            Mod.View.ShowCue(id,Cue.Warning);
+            var screenState=(EncounterScreen)AccessTools.Field(typeof(Presentation),"screen").GetValue(Mod.View);
+            screenState.SetPhase(Phase.Charge);
+            Mod.View.ShowCue(id,Cue.Run); Mod.View.ShowCue(id,Cue.Close);
+            var screen=(EncounterScreen)AccessTools.Field(typeof(Presentation),"screen").GetValue(Mod.View);
+            Check(screen.Status.Contains("rune=Run"),"Run replaces warning and near cue queues behind it");
+            AccessTools.Field(typeof(EncounterScreen),"cueAt").SetValue(screen,Time.realtimeSinceStartup-5.3f);
+            screen.Update(); Check(screen.Status.Contains("rune=Close"),"Queued near cue appears after Run");
+            Mod.View.Clear();
+            Check(!Utils.GetMainCamera().GetComponent<CrawlerScreenPass>().enabled,"Cleanup immediately disables the camera pass");
+        })) yield break;
+        yield return null;
+        if(!Try(()=>Check(!Utils.GetMainCamera().GetComponent<CrawlerScreenPass>(),"Cleanup destroys the camera component"))) yield break;
+        Mod.Settings.ScreenEffects=false;
+        Mod.View.Prepare("screen-disabled",0,true,false,origin,Mod.Settings,EncounterKind.Tease);
+        Mod.View.State("screen-disabled",1,Phase.Tease,origin+Vector3.forward*20);
+        Mod.View.ShowCue("screen-disabled",Cue.Start);
+        until=Time.realtimeSinceStartup+.3f;
+        while(Time.realtimeSinceStartup<until) { Mod.View.Lease("screen-disabled",1); yield return null; }
+        if(!Try(()=>
+        {
+            var pass=Utils.GetMainCamera().GetComponent<CrawlerScreenPass>();
+            var material=(Material)AccessTools.Field(typeof(CrawlerScreenPass),"material").GetValue(pass);
+            Check(material.GetFloat("_Strength")==0,"Local effect opt-out preserves rune rendering with zero camera effect strength");
+            Check(GameObject.Find("ForestCrawler_LocalTease").GetComponent<AudioSource>().isPlaying,"Tease audio plays with screen effects disabled");
+            Mod.View.Clear(); Mod.Settings.ScreenEffects=true;
+        })) yield break;
     }
     private IEnumerator MusicRegression()
     {
@@ -131,6 +202,14 @@ public sealed class SmokePlugin : BaseUnityPlugin
         if(Mathf.Abs(delta.y)>Vector3.ProjectOnPlane(delta,Vector3.up).magnitude*.7f+.2f) return false;
         return !Physics.CapsuleCast(from+Vector3.up*.6f,from+Vector3.up*2,.48f,delta.normalized,delta.magnitude,ForestCrawler.World.Solids,QueryTriggerInteraction.Ignore);
     }
+    private void FixedUpdate()
+    {
+        // Test-only stationary elevated target. Prevent incidental slips while native AI circles.
+        if(!holdRoof || !Player.m_localPlayer) return;
+        if(ArmGrab.Current!=null || ForestCrawler.Capture.Active) { holdRoof=false; return; }
+        var player=Player.m_localPlayer; var body=player.GetComponent<Rigidbody>();
+        body.position=heldRoofPoint; player.transform.position=heldRoofPoint; body.linearVelocity=Vector3.zero;
+    }
     private void Update()
     {
         if (fleeDuringCharge && Player.m_localPlayer && Mod.View.Status.Contains("presentation=Charge"))
@@ -209,12 +288,15 @@ public sealed class SmokePlugin : BaseUnityPlugin
         yield return new WaitForSecondsRealtime(15);
         if(Environment.GetEnvironmentVariable("FORESTCRAWLER_SMOKE_MUSIC_ONLY")=="1")
         {
-            yield return MusicRegression();
-            if(!failed) File.WriteAllText(Path.Combine(output,"verified.txt"),"Actual MusicMan source playback, mute and restoration passed in injected presentation phases.");
+            yield return ScreenRegression();
+            if(!failed) yield return MusicRegression();
+            if(!failed) File.WriteAllText(Path.Combine(output,"verified.txt"),"Actual camera shader, rune rendering/order/cleanup and MusicMan source playback passed in injected presentation phases.");
             Application.Quit(); yield break;
         }
         if(Environment.GetEnvironmentVariable("FORESTCRAWLER_SMOKE_NATIVE_ONLY")=="1")
-        { yield return NativeCaptureRegression(); yield break; }
+        { yield return ScreenRegression(); if(!failed) yield return NativeCaptureRegression(); yield break; }
+        yield return ScreenRegression();
+        if(failed) yield break;
         yield return MusicRegression();
         if(failed) yield break;
         // Select a reachable preview position in this procedurally generated fixture.
@@ -321,9 +403,18 @@ public sealed class SmokePlugin : BaseUnityPlugin
             Check(lureSource && lureSource.clip!=firstLure && lureSource.isPlaying,"Lure immediately alternates to the other opening clip");
             Check(longestSilence<.15f,"Lure has no deliberate inter-clip silence");
             Check(GameObject.Find("ForestCrawler_Local").GetComponents<AudioSource>().Length==1,"Alternating lure uses one source without overlap");
-            // Advance only the authority's phase clock; production transitions and presentation run normally.
+            // Advance the authoritative activation clock to the warning boundary.
             var encounter=AccessTools.Field(typeof(Network),"active").GetValue(Mod.Network);
-            AccessTools.Field(encounter.GetType(),"PhaseAt").SetValue(encounter,Time.realtimeSinceStartup-Rules.LureDeadlineSeconds);
+            AccessTools.Field(encounter.GetType(),"Started").SetValue(encounter,Time.realtimeSinceStartup-105);
+        })) yield break;
+        yield return new WaitForSecondsRealtime(.25f);
+        if(!Try(()=>
+        {
+            var encounter=AccessTools.Field(typeof(Network),"active").GetValue(Mod.Network);
+            int cues=(int)AccessTools.Field(encounter.GetType(),"Cues").GetValue(encounter);
+            Check((cues & (1<<(int)Cue.Warning))!=0 && Mod.View.Status.Contains("rune=Warning"),"Server emits the fifteen-second warning to the target client");
+            Check(Mod.View.Status.Contains("presentation=Lure"),"Warning does not itself start pursuit");
+            AccessTools.Field(encounter.GetType(),"Started").SetValue(encounter,Time.realtimeSinceStartup-(Rules.LureDeadlineSeconds-Mod.Assets.RevealLength));
         })) yield break;
         yield return new WaitForSecondsRealtime(.25f);
         if(!Try(()=>
@@ -349,6 +440,35 @@ public sealed class SmokePlugin : BaseUnityPlugin
             Check(driver.GetComponentsInChildren<Renderer>().All(r=>!r.enabled),"Native Greydwarf visuals stay hidden");
             Check(!BaseAI.IsEnemy(driver.GetComponent<Character>(),driver.GetComponent<Character>()),"Driver cannot select itself as an enemy");
             CheckMusic(true,"Native chase retains music suppression");
+            Mod.Network.ClearOwn(); Mod.View.Clear();
+        })) yield break;
+        yield return null;
+        if(!Try(()=>global::Console.instance.TryRunCommand("crawler_encounter"))) yield break;
+        yield return new WaitForSecondsRealtime(14);
+        if(!Try(()=>
+        {
+            Check(Mod.View.Status.Contains("presentation=Lure"),"Retreat fixture starts in Lure");
+            var e=AccessTools.Field(typeof(Network),"active").GetValue(Mod.Network);
+            var origin=(Vector3)AccessTools.Field(e.GetType(),"LureOrigin").GetValue(e);
+            float distance=Vector3.ProjectOnPlane(Player.m_localPlayer!.transform.position-origin,Vector3.up).magnitude;
+            // Inject only the baseline, keeping the real shared player position and server update path.
+            AccessTools.Field(e.GetType(),"StartDistance").SetValue(e,distance-50.1f);
+        })) yield break;
+        yield return new WaitForSecondsRealtime(.3f);
+        if(!Try(()=>
+        {
+            Check(Mod.View.Status.Contains("rune=Escape") && Mod.View.Status.Contains("presentation=Lure"),"Fifty additional metres warn without starting pursuit");
+            var e=AccessTools.Field(typeof(Network),"active").GetValue(Mod.Network);
+            var origin=(Vector3)AccessTools.Field(e.GetType(),"LureOrigin").GetValue(e);
+            float distance=Vector3.ProjectOnPlane(Player.m_localPlayer!.transform.position-origin,Vector3.up).magnitude;
+            AccessTools.Field(e.GetType(),"StartDistance").SetValue(e,distance-75.1f);
+        })) yield break;
+        yield return new WaitForSecondsRealtime(.25f);
+        if(!Try(()=>Check(Mod.View.Status.Contains("presentation=Reveal"),"Seventy-five additional metres trigger reveal immediately"))) yield break;
+        yield return new WaitForSecondsRealtime(Mod.Assets.RevealLength);
+        if(!Try(()=>
+        {
+            Check(Mod.View.Status.Contains("presentation=Charge"),"Retreat reveal enters native chase");
             Mod.Network.ClearOwn(); Mod.View.Clear();
         })) yield break;
         yield return null;
@@ -564,23 +684,24 @@ public sealed class SmokePlugin : BaseUnityPlugin
             {
                 var probeDirection=Quaternion.Euler(0,i*10,0)*Vector3.forward;
                 if(!ForestCrawler.World.Ground(creature.transform.position+probeDirection*12,out var probe)) continue;
-                var proposed=probe+Vector3.up*6.3f-probeDirection*1.95f;
+                var proposed=probe+Vector3.up*12.3f-probeDirection*1.95f;
                 if(Physics.Linecast(creature.transform.position+Vector3.up*2.1f,proposed+Vector3.up*.8f,ForestCrawler.World.Solids,QueryTriggerInteraction.Ignore)) continue;
                 ground=probe; direction=probeDirection; break;
             }
             Check(direction!=Vector3.zero,"Roof fixture has actual unobstructed scene visibility before placement");
             roof=GameObject.CreatePrimitive(PrimitiveType.Cube); roof.name="UnreachableRoofFixture";
-            roof.transform.SetPositionAndRotation(ground+Vector3.up*3,Quaternion.LookRotation(direction));
-            roof.transform.localScale=new Vector3(4,6,4); roof.layer=LayerMask.NameToLayer("piece");
-            roofStart=ground+Vector3.up*6.3f-direction*1.95f;
+            roof.transform.SetPositionAndRotation(ground+Vector3.up*6,Quaternion.LookRotation(direction));
+            roof.transform.localScale=new Vector3(4,12,4); roof.layer=LayerMask.NameToLayer("piece");
+            roofStart=ground+Vector3.up*12.3f-direction*1.95f;
             player.TeleportTo(roofStart,Quaternion.identity,true);
         })) yield break;
         yield return new WaitForSecondsRealtime(5);
         if(!Try(()=>
         {
             var e=AccessTools.Field(typeof(Network),"active").GetValue(Mod.Network);
+            heldRoofPoint=roofStart; holdRoof=true; body.position=roofStart; player.transform.position=roofStart; body.linearVelocity=Vector3.zero; Physics.SyncTransforms();
             Check((Phase)AccessTools.Field(e.GetType(),"Phase").GetValue(e)==Phase.Lure,"Roof fixture remains undiscovered before timeout transition");
-            AccessTools.Field(e.GetType(),"PhaseAt").SetValue(e,Time.realtimeSinceStartup-Rules.LureDeadlineSeconds);
+            AccessTools.Field(e.GetType(),"Started").SetValue(e,Time.realtimeSinceStartup-(Rules.LureDeadlineSeconds-Mod.Assets.RevealLength));
             var creaturePosition=GameObject.Find("ForestCrawler_Local").transform.position;
             Check(ArmGrab.Visible(creaturePosition,player,30),"Torso ray sees the player on the exposed roof edge");
             Check(!ArmGrab.Visible(player.transform.position+Vector3.right*31,player,30),"Arm grab rejects a target beyond thirty metres");
@@ -601,6 +722,22 @@ public sealed class SmokePlugin : BaseUnityPlugin
                 var driver=GameObject.Find("ForestCrawler_LocalDriver");
                 if(driver)
                 {
+                    // Keep this visual/pull fixture on an exposed edge as native AI circles the roof.
+                    // Production still performs the real solid raycast before authorizing a grab.
+                    if(!extended && Time.realtimeSinceStartup-chargeAt>20 && !ArmGrab.Visible(driver.transform.position,player,30))
+                    {
+                        var torsoOffset=player.GetCenterPoint()-player.transform.position;
+                        for(int edge=0;edge<16;edge++)
+                        {
+                            float angle=edge*Mathf.PI/8;
+                            var offset=new Vector3(Mathf.Sin(angle),0,Mathf.Cos(angle));
+                            offset*=.48f/Mathf.Max(Mathf.Abs(offset.x),Mathf.Abs(offset.z)); offset.y=.525f;
+                            var point=roof.transform.TransformPoint(offset);
+                            if(Physics.Linecast(driver.transform.position+Vector3.up*2.1f,point+torsoOffset,ForestCrawler.World.Solids,QueryTriggerInteraction.Ignore)) continue;
+                            heldRoofPoint=point; body.position=point; player.transform.position=point; body.linearVelocity=Vector3.zero; Physics.SyncTransforms();
+                            break;
+                        }
+                    }
                     var view=driver!.GetComponent<ZNetView>();
                     if(ZDOMan.instance.GetZDO(view.GetZDO().m_uid)!=null || ZNetScene.instance.FindInstance(view.GetZDO().m_uid))
                         throw new Exception("Detached driver leaked into replication registry");
@@ -610,6 +747,8 @@ public sealed class SmokePlugin : BaseUnityPlugin
                     extended=true;
                     Check(Time.realtimeSinceStartup-chargeAt>26,"Arm grab does not bypass the thirty-second pursuit delay");
                     CheckMusic(true,"Music remains suppressed during arm extension");
+                    var voice=GameObject.Find("ForestCrawler_Local").GetComponent<AudioSource>();
+                    Check(voice.clip==Mod.Assets.Audio["voice"] && voice.isPlaying,"Arm extension starts the spatial I-see-you line");
                 }
                 if(ArmGrab.Current!=null && !pulling)
                 {
@@ -657,7 +796,12 @@ public sealed class SmokePlugin : BaseUnityPlugin
         {
             var model=GameObject.Find("ForestCrawler_Local");
             foreach(var hand in model.GetComponentsInChildren<Transform>().Where(t=>t.name=="HandL"||t.name=="HandR"))
-                running.Check(Vector3.Distance(hand.position,Player.m_localPlayer.GetCenterPoint())<.4f,"Rendered arm pose keeps "+hand.name+" attached to the player's torso");
+                running.Check(Vector3.Distance(hand.position,Player.m_localPlayer.GetCenterPoint())<1.2f,"Rendered arm pose keeps "+hand.name+" alongside the player's torso");
+            var bones=model.GetComponentsInChildren<Transform>();
+            var left=bones.First(t=>t.name=="UpperArmL"); var right=bones.First(t=>t.name=="UpperArmR");
+            var hands=bones.First(t=>t.name=="HandL").position-bones.First(t=>t.name=="HandR").position;
+            var axis=Vector3.Cross(Vector3.up,Player.m_localPlayer.GetCenterPoint()-(left.position+right.position)*.5f).normalized;
+            running.Check(Mathf.Abs(Vector3.Dot(hands,axis)-Vector3.Dot(left.position-right.position,axis))<.05f,"Actual rendered arm pose preserves side order and shoulder width");
             running.Capture(model,name);
         });
     }
